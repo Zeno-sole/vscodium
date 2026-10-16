@@ -10,7 +10,7 @@
 # one again into $VSCODE_SYSROOT_DIR. Both honour a pre-existing directory, so
 # pre-extracting the tarballs keeps the build off api.github.com.
 #
-# Put the tarballs in UOS25_SYSROOT_CACHE (default /tmp/vscode-amd64-sysroot):
+# Put the tarballs in UOS25_SYSROOT_CACHE (default /tmp/uos25-sysroots):
 #   x86_64-linux-gnu-glibc-2.28-gcc-10.5.0.tar.gz
 #   x86_64-linux-gnu-glibc-2.28-gcc-8.5.0.tar.gz
 # (any host reachable from the build machine can fetch them; the release is
@@ -21,7 +21,11 @@
 set -euo pipefail
 
 ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
-CACHE="${UOS25_SYSROOT_CACHE:-/tmp/vscode-amd64-sysroot}"
+# Deliberately not /tmp/vscode-amd64-sysroot: that is the path
+# install-sysroot.ts falls back to when VSCODE_SYSROOT_DIR is unset, and it
+# deletes and recreates the directory before downloading - pointing the cache
+# there means a failed staging run wipes the tarballs it was meant to use.
+CACHE="${UOS25_SYSROOT_CACHE:-/tmp/uos25-sysroots}"
 SYSROOT_ROOT="${ROOT}/vscode/.build/sysroots"
 
 stage() {
@@ -65,6 +69,33 @@ elif [[ -f "${CACHE}/debian_bullseye_amd64_sysroot.tar.xz" ]]; then
 else
   echo "missing ${CACHE}/debian_bullseye_amd64_sysroot.tar.xz - leaving it to be downloaded" >&2
 fi
+
+# setup-env.sh also runs build/linux/libcxx-fetcher.ts, which pulls the libcxx
+# headers and objects from the Electron release through @electron/get. It skips
+# any directory that is already populated, so the copies from the build host's
+# Electron cache are extracted here - the download is unreliable from a UOS
+# network and is not needed when the artifacts are already present.
+ELECTRON_CACHE_DIR="${UOS25_ELECTRON_CACHE:-${ELECTRON_CACHE:-${HOME}/.cache/electron}}"
+stage_zip() {
+  local pattern="$1" dest="$2"
+  if [[ -d "${dest}" ]] && [[ -n "$(ls -A "${dest}" 2>/dev/null)" ]]; then
+    echo "cached  ${dest}" >&2
+    return 0
+  fi
+  local zip
+  zip="$(find "${ELECTRON_CACHE_DIR}" -maxdepth 2 -name "${pattern}" 2>/dev/null | head -1)"
+  if [[ -z "${zip}" ]]; then
+    echo "missing ${pattern} under ${ELECTRON_CACHE_DIR} - leaving it to be downloaded" >&2
+    return 1
+  fi
+  echo "extract $(basename "${zip}") -> ${dest}" >&2
+  mkdir -p "${dest}"
+  python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "${zip}" "${dest}"
+}
+
+stage_zip "libcxx-objects-*-linux-x64.zip" "${ROOT}/vscode/.build/libcxx-objects"
+stage_zip "libcxx_headers.zip" "${ROOT}/vscode/.build/libcxx_headers"
+stage_zip "libcxxabi_headers.zip" "${ROOT}/vscode/.build/libcxxabi_headers"
 
 cat <<EOF
 

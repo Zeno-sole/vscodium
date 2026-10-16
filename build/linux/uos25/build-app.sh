@@ -41,6 +41,9 @@ echo "== building VSCodium application tree =="
 echo "   release  : ${RELEASE_VERSION}"
 echo "   arch     : ${VSCODE_ARCH} (npm ${npm_config_arch})"
 echo "   quality  : ${VSCODE_QUALITY}"
+echo "   npm      : ${npm_config_registry}"
+echo "   electron : ${ELECTRON_MIRROR} (custom dir: ${ELECTRON_CUSTOM_DIR:-<default>})"
+echo "   proxy    : ${http_proxy:-<none>}"
 
 # The application build is long (it compiles the whole workbench and bundles
 # every extension), so an existing tree is reused. `debian/rules clean` removes
@@ -54,6 +57,20 @@ if [[ -d "${APP_TREE}" && "${UOS25_FORCE_REBUILD:-no}" != "yes" ]]; then
 fi
 
 # {{{ 1. sources
+# A local mirror of the VS Code repository can stand in for github.com, which is
+# what makes the build viable from a UOS network: the fetch is several hundred
+# megabytes and a proxy that drops connections will not get through it. The
+# mapping is passed through the environment rather than written to a config
+# file, so nothing outside this build is modified. When the caller has already
+# supplied a mapping set (pbuilder does, for the rust git dependencies as well),
+# it is left alone.
+if [[ -n "${UOS25_VSCODE_MIRROR:-}" && -z "${GIT_CONFIG_COUNT:-}" ]]; then
+  echo "== using VS Code mirror: ${UOS25_VSCODE_MIRROR} =="
+  export GIT_CONFIG_COUNT=1
+  export GIT_CONFIG_KEY_0="url.${UOS25_VSCODE_MIRROR}.insteadOf"
+  export GIT_CONFIG_VALUE_0="https://github.com/Microsoft/vscode.git"
+fi
+
 if [[ ! -d vscode/.git ]]; then
   echo "== fetching VS Code sources =="
   bash get_repo.sh

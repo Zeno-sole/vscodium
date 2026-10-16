@@ -16,7 +16,9 @@ Build-Depends:
  npm,
  pkg-config,
  python3,
+ python-is-python3,
  rustc (>= 1.85) | rustup,
+ xz-utils,
 Standards-Version: 4.6.2
 Homepage: https://vscodium.com/
 Rules-Requires-Root: no

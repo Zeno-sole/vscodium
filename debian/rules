@@ -10,6 +10,11 @@
 
 include /usr/share/dpkg/architecture.mk
 
+# The build helpers are bash scripts (they use [[ ]] and arrays), and make would
+# otherwise run the recipes with /bin/sh, where `[[` is not a builtin and the
+# condition silently evaluates as false.
+SHELL := /bin/bash
+
 export DH_VERBOSE = 1
 export LC_ALL = C.UTF-8
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all

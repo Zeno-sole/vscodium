@@ -9,8 +9,8 @@
 # needed here.
 #
 # The NodeSource repository is the same one the reference build host uses. Set
-# UOS25_PB_NO_NODESOURCE=yes in the chroot environment to skip it when nodejs
-# >= 22 is already available from another source.
+# UOS25_PB_NO_NODESOURCE=yes to skip it when nodejs >= 22 is already available
+# from another source.
 
 set -e
 
@@ -24,13 +24,49 @@ if [ -f /etc/apt/sources.list.d/nodesource.list ]; then
 	exit 0
 fi
 
+# The settings build.sh could not pass into the chroot otherwise, including the
+# HTTP proxy this network needs for anything outside the intranet. Only the
+# NodeSource host is routed through it - the UOS mirror must stay direct.
+if [ -f /tmp/uos25-buildenv/build.env ]; then
+	. /tmp/uos25-buildenv/build.env
+fi
+
 echo "D10nodesource: adding the NodeSource node_22.x repository"
 
 apt-get update -y
 apt-get install -y --no-install-recommends ca-certificates curl gnupg
 
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-	| gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
+if [ -n "${http_proxy:-}" ]; then
+	echo "Acquire::https::Proxy::deb.nodesource.com \"${http_proxy}\";" \
+		> /etc/apt/apt.conf.d/99nodesource-proxy
+	echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/99nodesource-retries
+fi
+
+# The signing key is small but the proxy drops it often enough to be a nuisance,
+# so a copy bind-mounted from the build host is preferred; build.sh mounts
+# /usr/share/keyrings/nodesource.gpg when the host already has it.
+if [ -s /usr/share/keyrings/nodesource.gpg ]; then
+	echo "D10nodesource: using the pre-seeded NodeSource key"
+else
+	i=1
+	while [ "${i}" -le 20 ]; do
+		if curl -fsSL --retry 3 --retry-delay 3 \
+			-o /tmp/nodesource-repo.gpg.key \
+			https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key; then
+			break
+		fi
+		echo "D10nodesource: key fetch attempt ${i} failed"
+		i=$((i + 1))
+		sleep 5
+	done
+
+	if [ ! -s /tmp/nodesource-repo.gpg.key ]; then
+		echo "D10nodesource: could not fetch the NodeSource signing key" >&2
+		exit 1
+	fi
+
+	gpg --dearmor -o /usr/share/keyrings/nodesource.gpg < /tmp/nodesource-repo.gpg.key
+fi
 
 echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
 	> /etc/apt/sources.list.d/nodesource.list

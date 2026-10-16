@@ -39,7 +39,11 @@ export SHOULD_BUILD_TAR="${SHOULD_BUILD_TAR:-yes}"
 # full mirror and serves the Electron binaries as well.
 export npm_config_registry="${npm_config_registry:-https://registry.npmmirror.com}"
 export ELECTRON_MIRROR="${ELECTRON_MIRROR:-https://npmmirror.com/mirrors/electron/}"
-export ELECTRON_CUSTOM_DIR="${ELECTRON_CUSTOM_DIR:-{{ version }}}"
+# ELECTRON_CUSTOM_DIR is deliberately left alone. @electron/get defaults it to
+# `v${version}`, which is exactly the layout npmmirror uses, and setting it to
+# the `{{ version }}` placeholder instead is fragile: the placeholder's closing
+# braces make the `${VAR:-...}` assignment ambiguous and the value can end up
+# with stray braces, producing URLs like .../electron/43.7.3}}/electron-...zip.
 
 # node-gyp reads its header dist-url out of the checked-in .npmrc and ignores
 # http_proxy, so the Electron/Node headers come from a loopback mirror staged by

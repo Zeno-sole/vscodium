@@ -37,6 +37,15 @@ PACKAGES=(
 
 mkdir -p "${NUPKG_DIR}" "${OUT}/${RID}"
 
+# Nothing to do when the seed is already complete - and re-extracting would fail
+# anyway when the seed is a read-only bind mount.
+if [[ -s "${OUT}/${RID}/Microsoft.AI.Foundry.Local.Core.so" \
+   && -s "${OUT}/${RID}/libonnxruntime.so" \
+   && -s "${OUT}/${RID}/libonnxruntime-genai.so" ]]; then
+  echo "seed already present: ${OUT}/${RID}" >&2
+  exit 0
+fi
+
 for spec in "${PACKAGES[@]}"; do
   name="${spec%%/*}"
   version="${spec##*/}"

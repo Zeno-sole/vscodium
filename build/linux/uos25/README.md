@@ -92,26 +92,47 @@ sudo ./build/linux/uos25/pbuilder/create-chroot.sh    # once
 ./build/linux/uos25/pbuilder/build.sh
 ```
 
-This creates the source package with `dpkg-buildpackage -S` and hands the `.dsc`
-to pbuilder, which runs `debian/rules` inside the chroot.
+This creates the source package with `dpkg-source -b` and hands the `.dsc` to
+pbuilder, which runs `debian/rules` inside the chroot, so the whole build happens
+in a clean UOS 25 environment. The result lands in `assets/`.
 
-Two things the UOS 25 archive cannot provide, which the pbuilder path has to
-work around:
+Several things have to be arranged around the chroot, because pbuilder runs the
+build as its own unprivileged user with a minimal environment:
 
 * **nodejs >= 22.** The archive ships nodejs 20, but the VS Code build runs
   `node --experimental-strip-types`, which needs node >= 22.6, so
   `Build-Depends: nodejs (>= 22)` cannot be satisfied from the archive.
   `pbuilder/hooks/D10nodesource` adds the NodeSource repository before build
-  dependencies are resolved.
-* **the toolchain caches.** Fetching the VS Code sources, the npm packages, the
-  Electron binary and the build-agent sysroots from scratch inside the chroot
-  takes well over an hour, so `pbuilder/build.sh` bind-mounts the host caches.
-  Set `UOS25_PB_NO_CACHES=yes` to build without them.
+  dependencies are resolved; the signing key is taken from the build host when
+  it already has one, because fetching it through the proxy is unreliable.
+* **Environment variables.** pbuilder does not pass them in, so `build.sh`
+  writes what the build needs — the HTTP proxy, `GITHUB_TOKEN`, `UOS25_RUST_BIN`,
+  `HOME`, `XDG_CACHE_HOME`, `CARGO_HOME` and the git mirror mappings — to
+  `/tmp/uos25-buildenv/build.env` and bind-mounts that directory; `env.sh`
+  sources it. Note that `sudo` resets the environment, so `build.sh` elevates
+  only the pbuilder call and refuses to run as root itself.
+* **Writable caches.** The chroot's build user (uid 1234) does not own anything
+  under the invoking user's home, so the Electron and cargo caches are staged
+  into writable copies under `/tmp` rather than mounted where they live. `HOME`
+  is set to `/tmp` for the same reason, and `npm_config_devdir` keeps node-gyp
+  from falling back to a temporary directory (which loses the electron target).
+* **Git mirrors.** The VS Code fetch is several hundred megabytes and the tunnel
+  CLI has two git dependencies; none of those transfers survive this proxy.
+  `build.sh` bind-mounts local mirrors (`/tmp/vscode-mirror.git`,
+  `/tmp/rust-git-mirrors`) and maps the upstream URLs onto them through
+  `GIT_CONFIG_*`, so nothing is written to a git config file.
+* **Build place.** pbuilder builds in `/var/cache/pbuilder/build`, which is only
+  a few GB on a desktop install; this build needs more, so
+  `--buildplace /tmp/pbuilder-build` is used.
+* **The tunnel CLI is skipped by default.** Cargo cannot resolve its git
+  dependencies and the crates.io index through this network — it gives up with
+  "transfer too slow" — so `build.sh` passes `SHOULD_BUILD_CLI=no`. Set
+  `UOS25_PB_BUILD_CLI=yes` to attempt it. `bin/codium` is a shell wrapper around
+  `resources/app/out/cli.js` and does not need it; the host build does produce
+  `codium-tunnel`.
 
-pbuilder cannot pass environment variables into the chroot, so `build.sh` writes
-the settings the build needs there (the HTTP proxy, `GITHUB_TOKEN`,
-`UOS25_RUST_BIN`) to `/tmp/uos25-buildenv/build.env`, bind-mounts that
-directory, and `env.sh` sources the file.
+`UOS25_PB_NO_CACHES=yes` builds without any of the staged caches and mirrors,
+which is what a genuinely cold build would do.
 
 ## Verifying the deb
 
@@ -137,7 +158,7 @@ source was written, and that `apt update` still succeeds afterwards.
   CLI — `bin/codium` is a shell wrapper around `resources/app/out/cli.js` and
   works either way.
 * the sysroot tarballs in `UOS25_SYSROOT_CACHE` (default
-  `/tmp/vscode-amd64-sysroot`), from the `Microsoft/vscode-linux-build-agent`
+  `/tmp/uos25-sysroots`), from the `Microsoft/vscode-linux-build-agent`
   release `v20260212-405735`:
   * `x86_64-linux-gnu-glibc-2.28-gcc-10.5.0.tar.gz`
   * `x86_64-linux-gnu-glibc-2.28-gcc-8.5.0.tar.gz`
