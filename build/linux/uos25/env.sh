@@ -62,3 +62,16 @@ export UOS25_SKIP_T64_ALTERNATIVES="${UOS25_SKIP_T64_ALTERNATIVES:-yes}"
 # }}}
 
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
+
+# {{{ extra build environment
+# pbuilder cannot pass environment variables into the chroot, but the build
+# needs an HTTP proxy for the GitHub fetches. build/linux/uos25/pbuilder/build.sh
+# writes such settings to this file and bind-mounts it, and the hook in
+# pbuilder/hooks/ exposes it at the same path inside the chroot. Anything set
+# here overrides the defaults above.
+UOS25_BUILD_ENV_FILE="${UOS25_BUILD_ENV_FILE:-/tmp/uos25-buildenv/build.env}"
+if [[ -f "${UOS25_BUILD_ENV_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  . "${UOS25_BUILD_ENV_FILE}"
+fi
+# }}}

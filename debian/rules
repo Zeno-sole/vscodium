@@ -1,0 +1,172 @@
+#!/usr/bin/make -f
+#
+# Debian build rules for the VSCodium (codium) package.
+#
+# The upstream build system is the set of scripts in this repository, so
+# dh_auto_* is disabled and the real work happens in override_dh_auto_build,
+# which drives build/linux/uos25/build-app.sh. See
+# build/linux/uos25/README.md for what that pipeline does and which network
+# access it needs.
+
+include /usr/share/dpkg/architecture.mk
+
+export DH_VERBOSE = 1
+export LC_ALL = C.UTF-8
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+# The VS Code build is architecture-specific and this package is amd64-only.
+export VSCODE_ARCH ?= x64
+export npm_config_arch ?= x64
+
+# Release identity. Override on the command line, e.g.
+#   dpkg-buildpackage -b -us -uc -- RELEASE_VERSION=1.140.06880
+export RELEASE_VERSION ?= 1.140.06880
+export VSCODE_QUALITY ?= stable
+export OS_NAME ?= linux
+
+# The tunnel CLI is Rust and its crates need edition 2024 (rustc >= 1.85).
+# Build-Depends allows either the distribution rustc or rustup; when only the
+# former is available and it is too old, set SHOULD_BUILD_CLI=no to ship the
+# package without codium-tunnel (bin/codium is a shell wrapper around
+# resources/app/out/cli.js and does not depend on it).
+export SHOULD_BUILD_CLI ?= yes
+
+APP_DIR := VSCode-linux-$(VSCODE_ARCH)
+DESTDIR_DIR := debian/codium
+PREFIX := /usr/share/codium
+
+%:
+	dh $@ --buildsystem=none
+
+# {{{ build
+override_dh_auto_configure:
+	# nothing to configure
+
+override_dh_auto_build:
+	@node --version
+	@command -v npm >/dev/null || { echo "npm is required to build codium" >&2; exit 1; }
+	. build/linux/uos25/env.sh && \
+		RELEASE_VERSION=$(RELEASE_VERSION) \
+		VSCODE_QUALITY=$(VSCODE_QUALITY) \
+		OS_NAME=$(OS_NAME) \
+		VSCODE_ARCH=$(VSCODE_ARCH) \
+		npm_config_arch=$(npm_config_arch) \
+		SHOULD_BUILD_CLI=$(SHOULD_BUILD_CLI) \
+		UOS25_RUST_BIN="$(UOS25_RUST_BIN)" \
+		bash build/linux/uos25/build-app.sh
+
+override_dh_auto_test:
+	# no test suite
+# }}}
+
+# {{{ install
+override_dh_auto_install:
+	# product.json is the merged file prepared by the build; it carries the
+	# names the desktop entries and mime types are generated from.
+	$(eval NAME_LONG := $(shell jq -r .nameLong vscode/product.json))
+	$(eval NAME_SHORT := $(shell jq -r .nameShort vscode/product.json))
+	$(eval APP_NAME := $(shell jq -r .applicationName vscode/product.json))
+	$(eval DESKTOP_NAME := $(shell jq -r .linuxDesktopName vscode/product.json))
+	$(eval ICON_NAME := $(shell jq -r .linuxIconName vscode/product.json))
+	$(eval URL_PROTOCOL := $(shell jq -r .urlProtocol vscode/product.json))
+	$(eval LICENSE_NAME := $(shell jq -r .licenseName vscode/product.json))
+
+	test -d "$(APP_DIR)" || { echo "$(APP_DIR) not found - run dh_auto_build first" >&2; exit 1; }
+
+	# application tree
+	install -d -m 0755 $(DESTDIR_DIR)$(PREFIX)
+	cp -a $(APP_DIR)/. $(DESTDIR_DIR)$(PREFIX)/
+
+	# desktop entries
+	install -d -m 0755 $(DESTDIR_DIR)/usr/share/applications
+	sed -e 's|@@NAME_LONG@@|$(NAME_LONG)|g' \
+	    -e 's|@@NAME_SHORT@@|$(NAME_SHORT)|g' \
+	    -e 's|@@DESKTOP_NAME@@|$(DESKTOP_NAME)|g' \
+	    -e 's|@@NAME@@|$(APP_NAME)|g' \
+	    -e 's|@@EXEC@@|$(PREFIX)/$(APP_NAME)|g' \
+	    -e 's|@@ICON@@|$(ICON_NAME)|g' \
+	    -e 's|@@URLPROTOCOL@@|$(URL_PROTOCOL)|g' \
+	    vscode/resources/linux/code.desktop \
+	    > $(DESTDIR_DIR)/usr/share/applications/$(DESKTOP_NAME).desktop
+	chmod 0644 $(DESTDIR_DIR)/usr/share/applications/$(DESKTOP_NAME).desktop
+	sed -e 's|@@NAME_LONG@@|$(NAME_LONG)|g' \
+	    -e 's|@@NAME_SHORT@@|$(NAME_SHORT)|g' \
+	    -e 's|@@DESKTOP_NAME@@|$(DESKTOP_NAME)|g' \
+	    -e 's|@@NAME@@|$(APP_NAME)|g' \
+	    -e 's|@@EXEC@@|$(PREFIX)/$(APP_NAME)|g' \
+	    -e 's|@@ICON@@|$(ICON_NAME)|g' \
+	    -e 's|@@URLPROTOCOL@@|$(URL_PROTOCOL)|g' \
+	    vscode/resources/linux/code-url-handler.desktop \
+	    > $(DESTDIR_DIR)/usr/share/applications/$(DESKTOP_NAME).UrlHandler.desktop
+	chmod 0644 $(DESTDIR_DIR)/usr/share/applications/$(DESKTOP_NAME).UrlHandler.desktop
+
+	# appdata, workspace mime type, icon
+	install -d -m 0755 $(DESTDIR_DIR)/usr/share/appdata
+	sed -e 's|@@NAME_LONG@@|$(NAME_LONG)|g' \
+	    -e 's|@@NAME@@|$(DESKTOP_NAME)|g' \
+	    -e 's|@@LICENSE@@|$(LICENSE_NAME)|g' \
+	    vscode/resources/linux/code.appdata.xml \
+	    > $(DESTDIR_DIR)/usr/share/appdata/$(DESKTOP_NAME).appdata.xml
+
+	install -d -m 0755 $(DESTDIR_DIR)/usr/share/mime/packages
+	sed -e 's|@@NAME_LONG@@|$(NAME_LONG)|g' \
+	    -e 's|@@NAME@@|$(APP_NAME)|g' \
+	    vscode/resources/linux/code-workspace.xml \
+	    > $(DESTDIR_DIR)/usr/share/mime/packages/$(APP_NAME)-workspace.xml
+
+	install -d -m 0755 $(DESTDIR_DIR)/usr/share/pixmaps
+	install -m 0644 vscode/resources/linux/code.png \
+	    $(DESTDIR_DIR)/usr/share/pixmaps/$(ICON_NAME).png
+
+	# shell completions
+	install -d -m 0755 $(DESTDIR_DIR)/usr/share/bash-completion/completions
+	sed -e 's|@@APPNAME@@|$(APP_NAME)|g' \
+	    vscode/resources/completions/bash/code \
+	    > $(DESTDIR_DIR)/usr/share/bash-completion/completions/$(APP_NAME)
+	install -d -m 0755 $(DESTDIR_DIR)/usr/share/zsh/vendor-completions
+	sed -e 's|@@APPNAME@@|$(APP_NAME)|g' \
+	    vscode/resources/completions/zsh/_code \
+	    > $(DESTDIR_DIR)/usr/share/zsh/vendor-completions/_$(APP_NAME)
+
+	# copyright and the upstream license text
+	install -d -m 0755 $(DESTDIR_DIR)/usr/share/doc/codium
+	install -m 0644 LICENSE $(DESTDIR_DIR)/usr/share/doc/codium/LICENSE.txt
+
+# The Electron binaries and the bundled .node modules are shipped as built:
+# stripping them changes the shipped artifact and dh_strip chokes on the
+# several-hundred-megabyte binaries. dh_dwz is the debug-info optimizer that
+# runs over the same set and has nothing to do here either.
+override_dh_strip:
+	# not applicable
+
+override_dh_dwz:
+	# not applicable
+
+# dh_fixperms strips the setuid bit from everything, but Chromium's sandbox
+# helper needs it (the upstream deb ships it as 4755).
+override_dh_fixperms:
+	dh_fixperms
+	chmod 4755 $(DESTDIR_DIR)$(PREFIX)/chrome-sandbox
+
+# Dependencies are maintained in debian/control (see the note there) rather
+# than recomputed here, because dpkg-shlibdeps would need the build-agent
+# sysroot that the upstream generator uses.
+override_dh_shlibdeps:
+	# not applicable
+
+# The bundled .so files live in /usr/share/codium and are private to the
+# application; they must not generate shlibs entries.
+override_dh_makeshlibs:
+	# not applicable
+# }}}
+
+# {{{ clean
+# dh_clean has to run before the generated trees are deleted: it restores the
+# files it moved aside during the build, which needs those trees to still be
+# there. Its bookkeeping is then dropped along with them, because the trees it
+# refers to are gone.
+override_dh_auto_clean:
+	-dh_clean
+	rm -rf $(APP_DIR) vscode assets
+	rm -rf debian/.debhelper
+# }}}

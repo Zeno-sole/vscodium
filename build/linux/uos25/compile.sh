@@ -75,4 +75,9 @@ npm run gulp vscode-min-prepack
 # }}}
 
 cd ..
+# Marker read by build-app.sh: the tree is branded, patched and compiled, so
+# the compile can be skipped on a later run (debian/rules clean removes it
+# together with vscode/).
+mkdir -p vscode/.build
+printf '%s' "${RELEASE_VERSION}" > vscode/.build/uos25-compiled
 echo "compile done"

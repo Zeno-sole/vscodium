@@ -1,0 +1,29 @@
+#!/bin/sh
+set -e
+
+# Unlike the upstream package this postinst deliberately does not register
+# Microsoft's apt repository. Upstream gates that on
+# `if [ "@@NAME@@" != "code-oss" ]`, which is always true for VSCodium, and
+# writes packages.microsoft.com into the apt configuration - a host that is
+# unreachable from a UOS network, which would break every later `apt update`.
+
+# Symlink the launcher into /usr/bin
+if [ ! -e /usr/bin/codium ]; then
+	ln -s /usr/share/codium/bin/codium /usr/bin/codium
+fi
+
+# Register codium in the alternatives system. Priority 0 keeps it from ever
+# becoming the default editor in auto mode.
+update-alternatives --install /usr/bin/editor editor /usr/bin/codium 0
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+	update-desktop-database -q || true
+fi
+
+if command -v update-mime-database >/dev/null 2>&1; then
+	update-mime-database /usr/share/mime || true
+fi
+
+#DEBHELPER#
+
+exit 0

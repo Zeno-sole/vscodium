@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
-# End-to-end UOS 25 (codename `snipe`) .deb build for VSCodium.
+# Build the UOS 25 .deb through the standard Debian tooling.
 #
-# Runs the same pipeline as the upstream CI, but arranged for a single UOS 25
-# host instead of the split container jobs, and with the network assumptions
-# documented in build/linux/uos25/README.md.
+# debian/ lives at the root of the source tree, so the package is produced by
+# dpkg-buildpackage, which calls debian/rules; debian/rules drives
+# build/linux/uos25/build-app.sh and installs the resulting application tree.
 #
-#   ./build/linux/uos25/build-deb.sh
+#   ./build/linux/uos25/build-deb.sh              # binary package
+#   ./build/linux/uos25/build-deb.sh --clean      # from scratch (debian/rules clean first)
+#   ./build/linux/uos25/build-deb.sh --source     # source package (.dsc) for pbuilder
+#
+# The binary package is written next to the source tree by dpkg-buildpackage and
+# copied into ./assets, which is git-ignored.
 #
 # Environment:
-#   RELEASE_VERSION   e.g. 1.140.06880 (defaults to upstream/stable.json's tag
-#                     plus the current time patch, as get_repo.sh computes it)
-#   VSCODE_ARCH       x64 (default), arm64, ...
-#   UOS25_SYSROOT_CACHE  directory holding the build-agent sysroot tarballs
-#   UOS25_TOOLCHAIN_DIR  where the header mirror is staged (default /tmp/vscode-toolchain)
-#   http_proxy/https_proxy  needed only for GitHub fetches (electron binary,
-#                     sysroot tarballs, clang); mirrors are excluded via no_proxy.
-#
-# Artifacts land in ./assets.
+#   RELEASE_VERSION   upstream VSCodium version (default 1.140.06880)
+#   GITHUB_TOKEN      for the api.github.com extension downloads
+#   http_proxy/https_proxy  for the GitHub fetches only
 
-set -euo pipefail
+set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "${ROOT}"
@@ -28,57 +27,51 @@ cd "${ROOT}"
 
 export RELEASE_VERSION="${RELEASE_VERSION:-1.140.06880}"
 
-# Bundling the marketplace extensions downloads prebuilt .vsix files from
-# api.github.com, which rate limits anonymous requests with a 403. Any token
-# with public read access works; `gh auth token` is used when GITHUB_TOKEN is
-# not already exported.
+# Extension bundling hits api.github.com, which answers anonymous requests with
+# a 403. `gh auth token` is used when GITHUB_TOKEN is not exported.
 if [[ -z "${GITHUB_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
   GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"
   if [[ -n "${GITHUB_TOKEN}" ]]; then
     export GITHUB_TOKEN
-    echo "   github token : from gh credential store"
   fi
 fi
 
+MODE=binary
+CLEAN_OPT=(-nc)
+for arg in "$@"; do
+  case "${arg}" in
+    --source) MODE=source ;;
+    --clean) CLEAN_OPT=() ;;
+    -h|--help)
+      sed -n '2,20p' "${BASH_SOURCE[0]}"
+      exit 0
+      ;;
+    *) echo "unknown argument: ${arg}" >&2; exit 2 ;;
+  esac
+done
+
 echo "== UOS 25 deb build =="
 echo "   release  : ${RELEASE_VERSION}"
-echo "   arch     : ${VSCODE_ARCH} (npm ${npm_config_arch})"
-echo "   quality  : ${VSCODE_QUALITY}"
+echo "   arch     : ${VSCODE_ARCH}"
+echo "   mode     : ${MODE}"
 
-# {{{ 1. sources
-if [[ ! -d vscode/.git ]]; then
-  echo "== fetching VS Code sources =="
-  bash get_repo.sh
+if [[ "${MODE}" == "source" ]]; then
+  # Source package only, for `pbuilder --build`.
+  dpkg-buildpackage -S -us -uc -d
+  echo "== source package written to $(cd .. && pwd) =="
+  ls -1 ../codium_*.dsc
+  exit 0
 fi
-# }}}
 
-# {{{ 2. build-time downloads
-echo "== preparing mirrors =="
-# shellcheck disable=SC1090
-eval "$(bash build/linux/uos25/setup-toolchain-mirror.sh)"
-bash build/linux/uos25/configure-mirrors.sh
-# Staging the sysroots is best effort: if the tarballs are absent the build
-# falls back to downloading them itself.
-# shellcheck disable=SC1090
-eval "$(bash build/linux/uos25/stage-sysroots.sh || true)"
-# Pre-fetch the Foundry Local native libraries so npm does not stall on them.
-bash build/linux/uos25/seed-foundry.sh || true
-# }}}
+# `-nc` reuses an already built application tree (build-app.sh skips the build
+# when VSCode-linux-<arch> exists). Use --clean for the full from-scratch flow,
+# which is what debian/rules clean exists for.
+dpkg-buildpackage -b -us -uc "${CLEAN_OPT[@]}"
 
-# {{{ 3. compile the workbench
-echo "== compiling workbench =="
-bash build/linux/uos25/compile.sh
-# }}}
-
-# {{{ 4. package the application tree
-echo "== packaging application =="
-bash build/linux/uos25/package.sh
-# }}}
-
-# {{{ 5. assemble the deb
-echo "== building deb =="
-bash build/linux/uos25/prepare-deb.sh
-# }}}
+mkdir -p assets
+mv -f ../codium_"${RELEASE_VERSION}"_amd64.deb assets/ 2>/dev/null || true
+mv -f ../codium_"${RELEASE_VERSION}"-*_amd64.deb assets/ 2>/dev/null || true
+mv -f ../codium_"${RELEASE_VERSION}"_amd64.changes assets/ 2>/dev/null || true
 
 echo "== done =="
 ls -l assets/*.deb

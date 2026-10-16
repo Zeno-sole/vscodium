@@ -1,0 +1,9 @@
+# Keep the source package to the build scripts. The VS Code checkout, the
+# packaged application tree and the built assets are produced by the build and
+# must not end up in the tarball.
+tar-ignore = .git
+tar-ignore = .github
+tar-ignore = vscode
+tar-ignore = VSCode-*
+tar-ignore = assets
+tar-ignore = .zcodeignore

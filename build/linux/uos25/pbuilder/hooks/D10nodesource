@@ -1,0 +1,38 @@
+#!/bin/sh
+# pbuilder D hook: make nodejs >= 22 available inside the chroot.
+#
+# UOS 25's archive ships nodejs 20, but the VS Code build runs
+# `node --experimental-strip-types` and needs node >= 22.6, so the declared
+# Build-Depends cannot be satisfied from the UOS archive alone. D hooks run
+# before the source is unpacked and before build dependencies are resolved, and
+# are the documented place to call apt-get update, which is exactly what is
+# needed here.
+#
+# The NodeSource repository is the same one the reference build host uses. Set
+# UOS25_PB_NO_NODESOURCE=yes in the chroot environment to skip it when nodejs
+# >= 22 is already available from another source.
+
+set -e
+
+if [ "${UOS25_PB_NO_NODESOURCE:-no}" = "yes" ]; then
+	echo "D10nodesource: skipped (UOS25_PB_NO_NODESOURCE=yes)"
+	exit 0
+fi
+
+if [ -f /etc/apt/sources.list.d/nodesource.list ]; then
+	echo "D10nodesource: already configured"
+	exit 0
+fi
+
+echo "D10nodesource: adding the NodeSource node_22.x repository"
+
+apt-get update -y
+apt-get install -y --no-install-recommends ca-certificates curl gnupg
+
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+	| gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
+	> /etc/apt/sources.list.d/nodesource.list
+
+apt-get update -y

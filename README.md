@@ -129,19 +129,25 @@ Build instructions can be found [here](https://github.com/VSCodium/vscodium/blob
 ### Building for UOS 25
 
 This fork adds a UOS 25 (codename `snipe`, the commercial edition of Deepin 25)
-build path. It produces `codium_<version>_amd64.deb` and does not register
-Microsoft's apt repository in the package's `postinst` — on UOS that host is
-unreachable and the stock package would leave every later `apt update` failing.
+build path. `debian/` lives at the root of this repository, so the package is
+built with the standard Debian tooling — `dpkg-buildpackage` on a host, or
+`pbuilder --build` from the generated source package — and `debian/rules` drives
+the VSCodium build.
+
+The resulting package does not register Microsoft's apt repository in its
+`postinst`; on UOS that host is unreachable and the stock package would leave
+every later `apt update` failing.
 
 ```sh
-. build/linux/uos25/env.sh
 export RELEASE_VERSION=1.140.06880
-./build/linux/uos25/build-deb.sh
+export GITHUB_TOKEN=$(gh auth token)
+./build/linux/uos25/build-deb.sh          # dpkg-buildpackage -b -us -uc
 ```
 
-See [build/linux/uos25/README.md](build/linux/uos25/README.md) for the network
-assumptions, the mirror handling, and how to validate the resulting deb inside a
-clean UOS 25 pbuilder chroot.
+The result is `assets/codium_<version>_amd64.deb`. See
+[build/linux/uos25/README.md](build/linux/uos25/README.md) for the build
+dependencies, the network assumptions, the mirror handling, and how to build and
+validate the deb inside a clean UOS 25 pbuilder chroot.
 
 ## <a id="why"></a>Why Does This Exist
 

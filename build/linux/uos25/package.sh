@@ -124,12 +124,33 @@ fi
 find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
 # The tunnel CLI (build_cli.sh) is Rust and its crates use edition 2024, so it
-# needs a toolchain >= 1.85 with rustup. Point UOS25_RUST_BIN at a rustup bin
-# directory when the system Rust is too old or has no rustup, or set
-# SHOULD_BUILD_CLI=no to ship the deb without the tunnel CLI (bin/<name> itself
-# is a shell wrapper around resources/app/out/cli.js and does not need it).
+# needs a toolchain >= 1.85 with rustup. UOS 25 ships rustc 1.81, so point
+# UOS25_RUST_BIN at a rustup bin directory when the system Rust is too old, or
+# set SHOULD_BUILD_CLI=no to ship the deb without the tunnel CLI (bin/<name>
+# itself is a shell wrapper around resources/app/out/cli.js and does not need
+# it).
 if [[ -n "${UOS25_RUST_BIN:-}" ]]; then
   export PATH="${UOS25_RUST_BIN}:${PATH}"
+fi
+
+if [[ "${SHOULD_BUILD_CLI:-yes}" != "no" ]]; then
+  RUST_MIN="1.85"
+  RUST_VER="$(rustc --version 2>/dev/null | awk '{print $2}')"
+  if [[ -z "${RUST_VER}" ]]; then
+    echo "error: rustc not found but the tunnel CLI was requested" >&2
+    echo "       set UOS25_RUST_BIN to a rustup bin directory, or SHOULD_BUILD_CLI=no" >&2
+    exit 1
+  fi
+  if ! dpkg --compare-versions "${RUST_VER}" ge "${RUST_MIN}"; then
+    echo "error: rustc ${RUST_VER} is too old for the tunnel CLI (needs >= ${RUST_MIN}, edition 2024)" >&2
+    echo "       set UOS25_RUST_BIN to a rustup bin directory, or SHOULD_BUILD_CLI=no" >&2
+    exit 1
+  fi
+  if ! command -v rustup >/dev/null 2>&1; then
+    echo "error: rustup is required to build the tunnel CLI" >&2
+    echo "       set SHOULD_BUILD_CLI=no to skip it" >&2
+    exit 1
+  fi
 fi
 
 # shellcheck disable=SC1091

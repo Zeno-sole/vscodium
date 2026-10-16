@@ -1,0 +1,7 @@
+# debhelper / dpkg-buildpackage build artifacts
+/.debhelper/
+/codium/
+/codium.debhelper.log
+/codium.substvars
+/debhelper-build-stamp
+/files
