@@ -1,0 +1,24 @@
+#!/bin/bash
+#
+# UOS 25 post-removal script for VSCodium.
+#
+# Derived from the upstream resources/linux/debian/postrm.template with the
+# Microsoft apt-repository cleanup removed: upstream removes
+# /etc/apt/sources.list.d/vscode.sources and /usr/share/keyrings/microsoft.gpg
+# and reads the codium/add-microsoft-repo debconf answer, none of which the UOS
+# postinst creates. Asking debconf for a template that is not shipped makes the
+# script fail with exit status 255, which breaks `dpkg --remove`.
+
+rm -f /usr/bin/codium
+
+# Uninstall the desktop entry
+if hash update-desktop-database 2>/dev/null; then
+	update-desktop-database
+fi
+
+# Update mimetype database for removed workspace mimetype
+if hash update-mime-database 2>/dev/null; then
+	update-mime-database /usr/share/mime
+fi
+
+exit 0

@@ -126,6 +126,23 @@ flatpak run com.vscodium.codium
 
 Build instructions can be found [here](https://github.com/VSCodium/vscodium/blob/master/docs/howto-build.md)
 
+### Building for UOS 25
+
+This fork adds a UOS 25 (codename `snipe`, the commercial edition of Deepin 25)
+build path. It produces `codium_<version>_amd64.deb` and does not register
+Microsoft's apt repository in the package's `postinst` — on UOS that host is
+unreachable and the stock package would leave every later `apt update` failing.
+
+```sh
+. build/linux/uos25/env.sh
+export RELEASE_VERSION=1.140.06880
+./build/linux/uos25/build-deb.sh
+```
+
+See [build/linux/uos25/README.md](build/linux/uos25/README.md) for the network
+assumptions, the mirror handling, and how to validate the resulting deb inside a
+clean UOS 25 pbuilder chroot.
+
 ## <a id="why"></a>Why Does This Exist
 
 This repository contains build files to generate free release binaries of Microsoft's Visual Studio Code. When we speak of "free software", we're talking about freedom, not price.
