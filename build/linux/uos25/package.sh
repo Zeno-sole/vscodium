@@ -118,7 +118,16 @@ node build/lib/policies/policyGenerator.ts build/lib/policies/policyData.jsonc l
 npm run gulp "vscode-linux-${VSCODE_ARCH}-min-packing"
 
 if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then
-  bash "../build/linux/${VSCODE_ARCH}/ripgrep.sh" "../VSCode-linux-${VSCODE_ARCH}/resources/app/node_modules"
+  # Those scripts download the replacement binary from a GitHub release. Offline
+  # builds install the vendored copy instead.
+  if [[ -n "${UOS25_RIPGREP_DIR:-}" && -x "${UOS25_RIPGREP_DIR}/linux-${VSCODE_ARCH}/rg" ]]; then
+    echo "== installing vendored ripgrep for linux-${VSCODE_ARCH} =="
+    RG_PATH="../VSCode-linux-${VSCODE_ARCH}/resources/app/node_modules/@vscode/ripgrep-universal/bin/linux-${VSCODE_ARCH}/rg"
+    mkdir -p "$(dirname "${RG_PATH}")"
+    install -m 0755 "${UOS25_RIPGREP_DIR}/linux-${VSCODE_ARCH}/rg" "${RG_PATH}"
+  else
+    bash "../build/linux/${VSCODE_ARCH}/ripgrep.sh" "../VSCode-linux-${VSCODE_ARCH}/resources/app/node_modules"
+  fi
 fi
 
 find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c

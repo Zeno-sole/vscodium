@@ -67,6 +67,16 @@ export UOS25_SKIP_T64_ALTERNATIVES="${UOS25_SKIP_T64_ALTERNATIVES:-yes}"
 
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
 
+# {{{ optional downloads
+# Neither the Electron binary nor the Playwright browsers are needed to package
+# the application, and both install scripts would otherwise pull hundreds of
+# megabytes. prepare_vscode.sh sets these for the compile step, but the
+# packaging step runs the install scripts again through `npm rebuild`, in a
+# process that never sourced it.
+export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# }}}
+
 # {{{ extra build environment
 # pbuilder cannot pass environment variables into the chroot, but the build
 # needs an HTTP proxy for the GitHub fetches. build/linux/uos25/pbuilder/build.sh

@@ -20,6 +20,13 @@
 
 set -euo pipefail
 
+# Offline builds already have the headers: they live in the vendor directory and
+# are served from there, so there is nothing to stage or fetch.
+if [[ "${UOS25_OFFLINE:-no}" == "yes" ]]; then
+  echo "offline: node-gyp headers come from the vendor directory" >&2
+  exit 0
+fi
+
 DIR="${UOS25_TOOLCHAIN_DIR:-/tmp/vscode-toolchain}"
 PORT="${UOS25_TOOLCHAIN_PORT:-8099}"
 ELECTRON_VERSION="${UOS25_ELECTRON_VERSION:-43.7.3}"

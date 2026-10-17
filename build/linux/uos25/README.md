@@ -85,6 +85,30 @@ The result is `assets/codium_1.140.06880_amd64.deb`.
 `--clean` for a from-scratch build; by default `-nc` is used and an already
 built `VSCode-linux-x64/` is reused.
 
+## Building offline (vendored dependencies)
+
+UOS builds run without network access. Everything the build downloads can be
+fetched once into a local vendor directory and read from there:
+
+```sh
+./build/linux/uos25/vendor/fetch.sh amd64            # once, where there is network
+UOS25_VENDOR_DIR=~/uos25-vendor ./build/linux/uos25/build-deb.sh --offline
+```
+
+`--offline` sources `offline.sh`, which points every downloader at the vendor
+directory (serving it over loopback for the ones that need an HTTP URL), turns
+on `npm`/`cargo` offline modes, maps the git dependencies onto vendored mirrors,
+and selects the host toolchain. The vendor data is several gigabytes per
+architecture, so it lives outside the repository; see
+[vendor/README.md](vendor/README.md) for the layout, the per-architecture
+manifests and what each entry is for.
+
+amd64 is verified end to end: the package builds inside a network namespace with
+no route off the machine, and installs in a UOS 25 chroot. arm64 and loong64 are
+parameterised - each manifest carries that architecture's Electron, its node-gyp
+headers, its Foundry Local variant and, for loong64, its ripgrep replacement -
+but populating and building them has to happen on those architectures.
+
 ## Building inside a UOS 25 pbuilder chroot
 
 ```sh
@@ -178,6 +202,9 @@ source was written, and that `apt update` still succeeds afterwards.
 | `seed-foundry.sh` | pre-fetch the Foundry Local native libraries for the seed |
 | `compile.sh` | brand + compile the workbench (upstream `build.sh`, split install) |
 | `package.sh` | build `VSCode-linux-x64` (upstream `package_bin.sh` minus CI glue) |
+| `offline.sh` | point a build at a local vendor directory (no network) |
+| `vendor/fetch.sh` | populate the vendor directory for one or more architectures |
+| `vendor-vsix.sh` | point `product.json`'s built-in extensions at vendored `.vsix` |
 | `pbuilder/create-chroot.sh` | create the UOS 25 base tarball |
 | `pbuilder/build.sh` | source package + `pbuilder --build` |
 | `pbuilder/verify-deb.sh` | install and check the deb in the chroot |

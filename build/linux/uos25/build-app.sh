@@ -23,6 +23,14 @@ cd "${ROOT}"
 # shellcheck source=env.sh
 . build/linux/uos25/env.sh
 
+# Vendor/offline mode. offline.sh points every downloader at the local vendor
+# directory; it is sourced here so that both the standalone script and a
+# debian/rules run (which inherits only the environment) pick it up.
+if [[ "${UOS25_USE_VENDOR:-no}" == "yes" && "${UOS25_OFFLINE:-no}" != "yes" ]]; then
+  # shellcheck disable=SC1091
+  . build/linux/uos25/offline.sh
+fi
+
 export RELEASE_VERSION="${RELEASE_VERSION:-1.140.06880}"
 
 # Bundling the marketplace extensions downloads prebuilt .vsix files from
@@ -74,6 +82,17 @@ fi
 if [[ ! -d vscode/.git ]]; then
   echo "== fetching VS Code sources =="
   bash get_repo.sh
+fi
+
+# Offline: drop the two bundler-config projects from the npm install list.
+# Their lockfiles leave transitive peer dependencies without a resolution, so
+# npm constructs a registry URL that was never fetched and cannot install them
+# from a cache alone. Nothing in the product build imports either directory -
+# they exist so that extension development can run with rspack or vite - so
+# leaving them out does not affect the package.
+if [[ "${UOS25_OFFLINE:-no}" == "yes" ]]; then
+  echo "== offline: dropping build/rspack and build/vite from the npm install list =="
+  sed -i -e "/^	'build\/rspack',$/d" -e "/^	'build\/vite',$/d" vscode/build/npm/dirs.ts
 fi
 # }}}
 

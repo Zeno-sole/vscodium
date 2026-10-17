@@ -41,6 +41,27 @@ unset npm_config_ignore_scripts
 
 cd vscode
 
+# {{{ phase 1b: point the built-in extensions at vendored .vsix files
+# Done after prepare_vscode.sh, which is what writes product.json.
+bash ../build/linux/uos25/vendor-vsix.sh
+# }}}
+
+# {{{ phase 1c: Electron type definitions
+# build/npm/postinstall.ts downloads electron.d.ts from github.com unless the
+# file is already in place with the checksum recorded in
+# build/checksums/electron.txt, so offline builds stage the vendored copy.
+if [[ -n "${UOS25_ARCH_VENDOR_DIR:-}" ]]; then
+  dts="$(ls -1 "${UOS25_ARCH_VENDOR_DIR}"/electron/v*/electron.d.ts 2>/dev/null | head -1)"
+  if [[ -n "${dts}" ]]; then
+    mkdir -p .build/typings
+    cp -f "${dts}" .build/typings/electron.d.ts
+    echo "== staged electron.d.ts from the vendor directory =="
+  else
+    echo "warning: no vendored electron.d.ts; postinstall will try to download it" >&2
+  fi
+fi
+# }}}
+
 # {{{ phase 2: seed the Foundry Local libraries, then run install scripts
 if [[ -d "${FOUNDRY_SEED}/linux-x64" ]]; then
   echo "== seeding Foundry Local native libraries =="

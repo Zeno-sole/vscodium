@@ -78,8 +78,13 @@ echo "   ${DSC}"
 # pbuilder cannot pass environment variables into the chroot, so the settings
 # the build needs there - notably the HTTP proxy for the GitHub fetches - are
 # written to a file and bind-mounted; build/linux/uos25/env.sh sources it.
+#
+# It is removed again on exit: env.sh sources this path unconditionally, so a
+# leftover copy would leak chroot settings (HOME=/tmp in particular) into an
+# ordinary host build.
 BUILD_ENV_DIR="/tmp/uos25-buildenv"
 mkdir -p "${BUILD_ENV_DIR}"
+trap 'rm -rf "${BUILD_ENV_DIR}"' EXIT
 : > "${BUILD_ENV_DIR}/build.env"
 for var in http_proxy https_proxy GITHUB_TOKEN UOS25_RUST_BIN RUSTUP_HOME CARGO_HOME; do
   if [[ -n "${!var:-}" ]]; then

@@ -42,6 +42,7 @@ for arg in "$@"; do
   case "${arg}" in
     --source) MODE=source ;;
     --clean) CLEAN_OPT=() ;;
+    --offline) export UOS25_USE_VENDOR=yes ;;
     -h|--help)
       sed -n '2,20p' "${BASH_SOURCE[0]}"
       exit 0
@@ -50,10 +51,18 @@ for arg in "$@"; do
   esac
 done
 
+# Vendor/offline mode: no network at all. offline.sh is sourced here rather than
+# only inside build-app.sh so that the settings are in place for the whole
+# dpkg-buildpackage run, including the install step.
+if [[ "${UOS25_USE_VENDOR:-no}" == "yes" ]]; then
+  # shellcheck disable=SC1091
+  . build/linux/uos25/offline.sh
+fi
+
 echo "== UOS 25 deb build =="
 echo "   release  : ${RELEASE_VERSION}"
 echo "   arch     : ${VSCODE_ARCH}"
-echo "   mode     : ${MODE}"
+echo "   mode     : ${MODE}${UOS25_OFFLINE:+ (offline)}"
 
 if [[ "${MODE}" == "source" ]]; then
   # Source package only, for `pbuilder --build`.

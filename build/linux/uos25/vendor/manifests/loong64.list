@@ -1,0 +1,44 @@
+# loong64 vendor manifest
+#
+# loong64 differs from the other architectures in three ways, all of which come
+# from upstream VSCodium's own handling (build/linux/loong64/, package_bin.sh):
+#
+#   * Electron comes from darkyzhou/electron-loong64 and is a different version
+#     (43.4.1, not 43.7.3), so its node-gyp headers differ too. Offline, it is
+#     addressed through ELECTRON_MIRROR like the others, with
+#     VSCODE_ELECTRON_VERSION selecting 43.4.1; VSCODE_ELECTRON_REPOSITORY is not
+#     used because that path resolves the asset through api.github.com.
+#   * setup-env.sh is skipped entirely (VSCODE_SKIP_SETUPENV=1), so there is no
+#     clang toolchain, sysroot or libcxx to vendor - which is also why loong64
+#     needs no build-agent artifacts at all.
+#   * @vscode/ripgrep-universal ships no loong64 binary, so
+#     build/linux/loong64/ripgrep.sh replaces it with one from
+#     darkyzhou/ripgrep-loongarch64-musl. That binary is vendored here.
+#
+# Foundry Local publishes no loong64 RID; its install script warns and skips, so
+# there is nothing to vendor for it.
+#
+# The Electron checksum is the one VSCodium pins in
+# build/linux/loong64/electron.sha256sums.
+
+# Electron runtime
+58c900f8c38d42290fb4bdc0dc3df90a5977efd96aa39f06ce4bf4345a2fc4e9  electron/v43.4.1/electron-v43.4.1-linux-loong64.zip  https://github.com/darkyzhou/electron-loong64/releases/download/v43.4.1/electron-v43.4.1-linux-loong64.zip
+-  electron/v43.4.1/SHASUMS256.txt  https://github.com/darkyzhou/electron-loong64/releases/download/v43.4.1/SHASUMS256.txt
+# build/npm/electronTypes.ts wants this, validated against the checksum in
+# build/checksums/electron.txt; that file is assembled per architecture during
+# packaging, so on loong64 check the entry matches before relying on it.
+-  electron/v43.4.1/electron.d.ts  https://github.com/darkyzhou/electron-loong64/releases/download/v43.4.1/electron.d.ts
+
+# node-gyp headers for the loong64 Electron, plus the Node headers for the
+# remote/server build (which are architecture independent)
+-  node-headers/electron/v43.4.1/node-v43.4.1-headers.tar.gz  https://registry.npmmirror.com/-/binary/electron/v43.4.1/node-v43.4.1-headers.tar.gz
+57c6bee2e30bbbee5bd51d6cc343eb992e174b56a2a1d0eab7a7510771c20ea2  node-headers/node/v24.21.0/node-v24.21.0-headers.tar.gz  https://registry.npmmirror.com/-/binary/node/v24.21.0/node-v24.21.0-headers.tar.gz
+
+# ripgrep for loong64 (replaces the x86_64 fallback bundled in
+# @vscode/ripgrep-universal)
+-  ripgrep/linux-loong64/rg  https://github.com/darkyzhou/ripgrep-loongarch64-musl/releases/download/14.1.1/rg
+
+# Built-in extensions, normally fetched from api.github.com during packaging
+7380a890787452f14b2db7835dfa94de538caf358ebc263f9d46dd68ac52de93  vsix/ms-vscode.js-debug-companion.1.1.3.vsix  https://github.com/microsoft/vscode-js-debug-companion/releases/download/v1.1.3/ms-vscode.js-debug-companion.1.1.3.vsix
+d535f02a47031671f8c988bb7e79d6fec1a881883d9c9fa15ff81f28eae98500  vsix/ms-vscode.js-debug.1.140.0.vsix  https://github.com/microsoft/vscode-js-debug/releases/download/v1.140.0/ms-vscode.js-debug.1.140.0.vsix
+a962a1e6a3baf74c9354b7f47fa96e6d6f0423a63bff55d7f976b6134a748ae9  vsix/ms-vscode.vscode-js-profile-table.1.0.11.vsix  https://github.com/microsoft/vscode-js-profile-visualizer/releases/download/v1.0.11/ms-vscode.vscode-js-profile-table.1.0.11.vsix
