@@ -2,13 +2,13 @@
 
 UOS builds run without network access, so everything the build would otherwise
 download is fetched once, into a local vendor directory, and read from there.
-This directory holds the manifests and the tooling; the data itself lives
-outside the repository, because it is several gigabytes per architecture.
+This directory holds the manifests and the tooling; the data itself goes to
+`debian/vendor/`, so that it travels with the source tree.
 
 ## Layout
 
 ```
-<vendor>/                       $UOS25_VENDOR_DIR, default ~/uos25-vendor
+debian/vendor/                  $UOS25_VENDOR_DIR, overridable
   shared/                       architecture independent
     git/vscode.git                the VS Code sources
     git/rust/vscode-russh.git     the tunnel CLI's git dependencies
@@ -26,6 +26,12 @@ outside the repository, because it is several gigabytes per architecture.
     MANIFEST                      what was fetched, with checksums
   arm64/  loong64/              same shape
 ```
+
+It is build input, not something to commit: `debian/.gitignore` keeps it out of
+git, and `debian/source/options` keeps it out of the source package, so a
+`dpkg-source -b` run stays at a few megabytes instead of several gigabytes. A
+pbuilder run mounts it into the chroot, since the chroot unpacks the source
+somewhere else entirely.
 
 `electron/` and `node-headers/` mirror the URL layout the downloaders use, so
 they can be served over loopback unchanged: @electron/get asks for
@@ -54,7 +60,8 @@ in the npm cache are not, and neither is the Electron runtime.
 ## Building offline
 
 ```sh
-UOS25_VENDOR_DIR=~/uos25-vendor ./build/linux/uos25/build-deb.sh --offline
+./build/linux/uos25/build-deb.sh --offline              # on the host
+./build/linux/uos25/pbuilder/build.sh --offline         # in a UOS 25 chroot
 ```
 
 `--offline` sources `build/linux/uos25/offline.sh`, which

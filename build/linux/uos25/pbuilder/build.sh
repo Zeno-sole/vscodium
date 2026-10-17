@@ -36,6 +36,21 @@ fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 cd "${ROOT}"
 
+# --offline builds from debian/vendor and needs no network at all. The vendor
+# directory is bind-mounted because it lives in the source tree, which
+# debian/source/options keeps out of the source package.
+OFFLINE=no
+for arg in "$@"; do
+  case "${arg}" in
+    --offline) OFFLINE=yes ;;
+    -h|--help)
+      sed -n '2,24p' "${BASH_SOURCE[0]}"
+      exit 0
+      ;;
+    *) echo "unknown argument: ${arg}" >&2; exit 2 ;;
+  esac
+done
+
 # pbuilder needs root. When UOS25_SUDO_PASSWORD is set it is fed to `sudo -S`,
 # which is what an unattended run needs; otherwise plain sudo is used and the
 # caller has to have a valid sudo timestamp. The password is only ever read
@@ -91,6 +106,20 @@ for var in http_proxy https_proxy GITHUB_TOKEN UOS25_RUST_BIN RUSTUP_HOME CARGO_
     printf 'export %s=%q\n' "${var}" "${!var}" >> "${BUILD_ENV_DIR}/build.env"
   fi
 done
+# Offline: build-app.sh sources offline.sh, which reads the vendored
+# dependencies from this directory. It has to be an absolute path, because the
+# chroot unpacks the source somewhere else entirely.
+if [[ "${OFFLINE}" == "yes" ]]; then
+  VENDOR_DIR="${UOS25_VENDOR_DIR:-${ROOT}/debian/vendor}"
+  if [[ ! -d "${VENDOR_DIR}" ]]; then
+    echo "error: --offline needs a vendor directory, and ${VENDOR_DIR} does not exist" >&2
+    echo "       run: build/linux/uos25/vendor/fetch.sh amd64" >&2
+    exit 1
+  fi
+  echo "== offline: vendor directory ${VENDOR_DIR} =="
+  printf 'export %s=%q\n' UOS25_USE_VENDOR yes >> "${BUILD_ENV_DIR}/build.env"
+  printf 'export %s=%q\n' UOS25_VENDOR_DIR "${VENDOR_DIR}" >> "${BUILD_ENV_DIR}/build.env"
+fi
 # The package mirrors are reachable directly and must not be routed through the
 # proxy, so they are appended to whatever no_proxy the build host already
 # defines rather than replacing it. github.com deliberately stays on the proxy:
@@ -162,6 +191,17 @@ echo "== build environment passed to the chroot =="
 sed 's/^\(GITHUB_TOKEN=\).*/\1<set>/' "${BUILD_ENV_DIR}/build.env"
 
 BIND_MOUNTS=(--bindmounts "${BUILD_ENV_DIR}")
+
+# Offline builds read every build input from the vendor directory, which lives in
+# the source tree; the chroot unpacks the source elsewhere, so it is mounted at
+# the absolute path the environment points at. pbuilder itself still needs the
+# network here, but only to provision the chroot (its build dependencies,
+# including the nodejs 22 the UOS archive does not carry) - the build does not
+# touch it.
+if [[ "${OFFLINE}" == "yes" ]]; then
+  echo "== offline: mounting the vendor directory into the chroot =="
+  BIND_MOUNTS+=(--bindmounts "${VENDOR_DIR}")
+fi
 
 # Local git mirrors. build-app.sh maps github.com/Microsoft/vscode through
 # GIT_CONFIG_* so the several-hundred-megabyte fetch does not have to survive the

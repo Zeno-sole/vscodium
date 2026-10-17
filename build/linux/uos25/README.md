@@ -87,19 +87,22 @@ built `VSCode-linux-x64/` is reused.
 
 ## Building offline (vendored dependencies)
 
-UOS builds run without network access. Everything the build downloads can be
-fetched once into a local vendor directory and read from there:
+UOS builds run without network access. Everything the build downloads is fetched
+once into `debian/vendor/`, where it travels with the source tree and is reused
+by every later build:
 
 ```sh
 ./build/linux/uos25/vendor/fetch.sh amd64            # once, where there is network
-UOS25_VENDOR_DIR=~/uos25-vendor ./build/linux/uos25/build-deb.sh --offline
+./build/linux/uos25/build-deb.sh --offline           # host
+./build/linux/uos25/pbuilder/build.sh --offline      # UOS 25 chroot
 ```
 
 `--offline` sources `offline.sh`, which points every downloader at the vendor
 directory (serving it over loopback for the ones that need an HTTP URL), turns
 on `npm`/`cargo` offline modes, maps the git dependencies onto vendored mirrors,
-and selects the host toolchain. The vendor data is several gigabytes per
-architecture, so it lives outside the repository; see
+and selects the host toolchain. The data is several gigabytes per architecture
+and is deliberately not committed (`debian/.gitignore`) nor shipped in the source
+package (`debian/source/options`); see
 [vendor/README.md](vendor/README.md) for the layout, the per-architecture
 manifests and what each entry is for.
 

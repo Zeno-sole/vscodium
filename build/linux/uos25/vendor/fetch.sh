@@ -39,7 +39,11 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENDOR_DIR="${UOS25_VENDOR_DIR:-${HOME}/uos25-vendor}"
+REPO_ROOT="$(cd "${HERE}/../../../.." && pwd)"
+# The vendor data lives under debian/ so that it travels with the source tree.
+# debian/source/options keeps it out of the source package, and debian/.gitignore
+# keeps it out of git - it is build input, not something to commit.
+VENDOR_DIR="${UOS25_VENDOR_DIR:-${REPO_ROOT}/debian/vendor}"
 MANIFEST_DIR="${HERE}/manifests"
 
 VSCODE_COMMIT="${UOS25_VSCODE_COMMIT:-07f806f999227108933c2e30515b26eecc1fda74}"
@@ -223,4 +227,4 @@ done
 
 echo
 echo "vendor ready: ${VENDOR_DIR}"
-echo "build offline with:  UOS25_VENDOR_DIR=${VENDOR_DIR} ./build/linux/uos25/build-deb.sh --offline"
+echo "build offline with:  ./build/linux/uos25/build-deb.sh --offline"

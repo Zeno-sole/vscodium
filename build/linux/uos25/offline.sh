@@ -24,7 +24,8 @@ set -euo pipefail
 if [[ -n "${UOS25_VENDOR_DIR:-}" ]]; then
   VENDOR_DIR="${UOS25_VENDOR_DIR}"
 else
-  VENDOR_DIR="${HOME}/uos25-vendor"
+  # The vendor data lives under debian/ so that it travels with the source tree.
+  VENDOR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/debian/vendor"
   export UOS25_VENDOR_DIR="${VENDOR_DIR}"
 fi
 VENDOR_PORT="${UOS25_VENDOR_PORT:-8098}"
@@ -59,9 +60,10 @@ export NO_PROXY='*'
 if ! curl -fsS --noproxy '*' -o /dev/null "http://127.0.0.1:${VENDOR_PORT}/" 2>/dev/null; then
   echo "== starting the vendor file server on 127.0.0.1:${VENDOR_PORT} =="
   # The architecture directory is the document root, so the URLs the build uses
-  # (/electron/..., /node-headers/...) match the vendor layout directly.
+  # (/electron/..., /node-headers/...) match the vendor layout directly. The log
+  # goes to the temp directory, not into the vendor tree, which is build input.
   setsid nohup python3 -m http.server "${VENDOR_PORT}" --bind 127.0.0.1 \
-    --directory "${ARCH_DIR}" > "${VENDOR_DIR}/http.log" 2>&1 < /dev/null &
+    --directory "${ARCH_DIR}" > "${TMPDIR:-/tmp}/uos25-vendor-http.log" 2>&1 < /dev/null &
   disown
   sleep 2
 fi

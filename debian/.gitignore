@@ -5,3 +5,5 @@
 /codium.substvars
 /debhelper-build-stamp
 /files
+# vendored build dependencies (see build/linux/uos25/vendor/README.md)
+/vendor/
