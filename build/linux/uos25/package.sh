@@ -115,7 +115,10 @@ find .build/extensions -type f -name '*.node' -print -delete
 npm run copy-policy-dto --prefix build
 node build/lib/policies/policyGenerator.ts build/lib/policies/policyData.jsonc linux
 
-npm run gulp "vscode-linux-${VSCODE_ARCH}-min-packing"
+# Node 20: the ESM-only requires in @vscode/gulp-electron are rewritten here,
+# because the electron download runs as part of the packing task.
+uos25_patch_modules
+uos25_gulp "vscode-linux-${VSCODE_ARCH}-min-packing"
 
 if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then
   # Those scripts download the replacement binary from a GitHub release. Offline

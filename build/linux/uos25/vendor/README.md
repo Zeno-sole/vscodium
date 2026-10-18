@@ -19,7 +19,10 @@ debian/vendor/                  $UOS25_VENDOR_DIR, overridable
     electron/v43.7.3/             the Electron runtime + its SHASUMS256.txt
                                   + electron.d.ts
     node-headers/electron/...     node-gyp headers (Electron ABI)
-    node-headers/node/...         node-gyp headers (Node, for the server build)
+    node-headers/node/...         node-gyp headers (Node: v24.21.0 for the server
+                                  build, v20.15.1 for dependencies such as
+                                  @vscode/fs-copyfile that build against the
+                                  running Node)
     foundry/                      Foundry Local NuGet packages
     vsix/                         the built-in extensions
     ripgrep/linux-loong64/rg       only where upstream replaces it

@@ -85,6 +85,11 @@ export ELECTRON_MIRROR="${UOS25_VENDOR_URL}/electron/"
 # matching SHASUMS256.txt next to it; the vendor directory mirrors that layout.
 export UOS25_ELECTRON_DISTURL="${UOS25_VENDOR_URL}/node-headers/electron"
 export UOS25_NODE_DISTURL="${UOS25_VENDOR_URL}/node-headers/node"
+# Some dependencies (extensions/git's @vscode/fs-copyfile, for one) run node-gyp
+# for the Node runtime without an explicit dist-url, so it would go to
+# nodejs.org for the running Node's headers. Point its default at the vendor too;
+# invocations that do pass --dist-url are unaffected.
+export npm_config_disturl="${UOS25_NODE_DISTURL}"
 export UOS25_OFFLINE=yes
 # }}}
 
@@ -92,9 +97,16 @@ export UOS25_OFFLINE=yes
 # npm and cargo both work from their caches without network. The caches are
 # shared between architectures: the JS packages and the Rust crates are
 # architecture independent, only the optional native prebuilds differ.
-export npm_config_cache="${SHARED_DIR}/npm-cache"
+#
+# Both are also written to during the build (npm keeps its debug log and its
+# unpacked tarballs in the cache directory), so a caller that has a writable
+# copy passes it in through UOS25_NPM_CACHE / UOS25_CARGO_HOME and that wins
+# over the vendor directory, which is build input and may not be writable by
+# whoever the build runs as. build/linux/uos25/pbuilder/build.sh stages such
+# copies for the chroot build.
+export npm_config_cache="${UOS25_NPM_CACHE:-${SHARED_DIR}/npm-cache}"
 export npm_config_offline=true
-export CARGO_HOME="${SHARED_DIR}/cargo"
+export CARGO_HOME="${UOS25_CARGO_HOME:-${SHARED_DIR}/cargo}"
 export CARGO_NET_OFFLINE=true
 # }}}
 

@@ -7,8 +7,8 @@
 #     Microsoft.ML.OnnxRuntime.Foundry package, because
 #     Microsoft.ML.OnnxRuntime.Gpu.Linux only ships x86_64 binaries
 #     (see foundry-local-sdk/script/install-standard.cjs);
-#   * node-gyp's Electron headers are architecture independent, so the same
-#     tarball is used.
+#   * node-gyp's Electron and Node headers are architecture independent, so the
+#     same tarballs are used.
 #
 # arm64 builds of VSCodium run on an arm64 host (upstream CI uses native arm64
 # runners), so this vendor directory - and especially the npm cache, which holds
@@ -24,6 +24,10 @@ f6f043c23f000eb57b4a6aece3a1c20799856f1b39bb7daa6c0f01cc574439ae  electron/v43.7
 # node-gyp headers: the Electron ABI (client) and Node (remote/server)
 742755401cbd563d016b5031d91a32128cdde1408a47c95d13a0378dddee050b  node-headers/electron/v43.7.3/node-v43.7.3-headers.tar.gz  https://registry.npmmirror.com/-/binary/electron/v43.7.3/node-v43.7.3-headers.tar.gz
 57c6bee2e30bbbee5bd51d6cc343eb992e174b56a2a1d0eab7a7510771c20ea2  node-headers/node/v24.21.0/node-v24.21.0-headers.tar.gz  https://registry.npmmirror.com/-/binary/node/v24.21.0/node-v24.21.0-headers.tar.gz
+# A few dependencies (extensions/git's @vscode/fs-copyfile) build against the
+# running Node rather than Electron, so that Node's headers are needed too. UOS
+# 25 ships 20.15.1.
+8c2305c6df5d14525e0711f0da38295600987df4c2710c738c01400862a176b4  node-headers/node/v20.15.1/node-v20.15.1-headers.tar.gz  https://registry.npmmirror.com/-/binary/node/v20.15.1/node-v20.15.1-headers.tar.gz
 
 # Foundry Local native runtime (RID linux-arm64, cross-platform variant)
 04a278525213c32a363bf769bf62a5f30703a3eea06d02ccfc94e451137bb7c8  foundry/microsoft.ai.foundry.local.core.1.2.3.nupkg  https://api.nuget.org/v3-flatcontainer/microsoft.ai.foundry.local.core/1.2.3/microsoft.ai.foundry.local.core.1.2.3.nupkg

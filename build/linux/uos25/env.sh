@@ -77,6 +77,80 @@ export ELECTRON_SKIP_BINARY_DOWNLOAD=1
 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 # }}}
 
+# {{{ git-lfs
+# The VS Code repository marks a few copilot test fixtures with `filter: lfs`,
+# and their objects are not on the server ("remote missing object"). Nothing in
+# the build needs that content, so the smudge filter is skipped and the pointers
+# are left in place. This matters because git-lfs is installed on this machine -
+# it is needed to push to the internal GitLab mirror, which requires LFS objects
+# for the pointers in the history.
+export GIT_LFS_SKIP_SMUDGE=1
+# }}}
+
+# {{{ Node 20 support
+UOS25_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Exported because the functions below run in child processes (compile.sh,
+# package.sh) and cannot see a variable that is not.
+export UOS25_DIR
+
+# Node 22.6 added --experimental-strip-types and 22.12 made require() of an ES
+# module work; the VS Code build tooling assumes both. UOS 25 ships Node 20, and
+# below that threshold the loader in node20/ supplies them. See
+# build/linux/uos25/node20/README.md.
+if [[ -z "${UOS25_NODE20:-}" ]]; then
+  if node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=6)?0:1)' 2>/dev/null; then
+    UOS25_NODE20=no
+  else
+    UOS25_NODE20=yes
+  fi
+fi
+export UOS25_NODE20
+
+if [[ "${UOS25_NODE20}" == "yes" ]]; then
+  # --import is available from Node 20.6 and applies to every node process the
+  # build starts, which is what avoids rewriting each npm script. Appended only
+  # once: this file is sourced by more than one script in the pipeline, and a
+  # second copy would register the same loader twice.
+  UOS25_NODE20_IMPORT="--import file://${UOS25_DIR}/node20/register.mjs"
+  if [[ "${NODE_OPTIONS:-}" != *"${UOS25_NODE20_IMPORT}"* ]]; then
+    export NODE_OPTIONS="${NODE_OPTIONS:-} ${UOS25_NODE20_IMPORT}"
+  fi
+fi
+
+# Run a gulp task. `npm run gulp` passes --experimental-strip-types, which Node
+# older than 22.6 rejects outright, so gulp is invoked directly there; the loader
+# registered above handles the TypeScript.
+uos25_gulp() {
+  if [[ "${UOS25_NODE20}" == "yes" ]]; then
+    node --max-old-space-size="${MAX_OLD_SPACE_SIZE:-8192}" ./node_modules/gulp/bin/gulp.js "$@"
+  else
+    npm run gulp -- "$@"
+  fi
+}
+
+# The TypeScript-requiring entry points that upstream runs before `npm ci` have
+# to wait for it on Node 20, because the loader needs the TypeScript that npm ci
+# installs. compile.sh calls this at the right moment instead.
+uos25_run_preinstall() {
+  if [[ "${UOS25_NODE20}" == "yes" ]]; then
+    VSCODE_FORCE_INSTALL=1 node build/npm/preinstall.ts
+  fi
+}
+
+# @vscode/gulp-electron requires three ESM-only packages from CommonJS, which
+# only works from Node 22.12. patch-modules.mjs rewrites those requires; it has
+# to run again after every npm ci, which is what recreates node_modules.
+uos25_patch_modules() {
+  if [[ "${UOS25_NODE20}" == "yes" ]]; then
+    node "${UOS25_DIR}/node20/patch-modules.mjs" "${UOS25_DIR}/../../.."
+  fi
+}
+
+# compile.sh, package.sh and build.sh are separate processes; bash does not pass
+# functions to children unless they are exported.
+export -f uos25_gulp uos25_run_preinstall uos25_patch_modules
+# }}}
+
 # {{{ extra build environment
 # pbuilder cannot pass environment variables into the chroot, but the build
 # needs an HTTP proxy for the GitHub fetches. build/linux/uos25/pbuilder/build.sh

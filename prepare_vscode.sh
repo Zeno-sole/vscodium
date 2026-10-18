@@ -204,7 +204,15 @@ else
   fi
 fi
 
-node build/npm/preinstall.ts
+if [[ "${UOS25_NODE20}" == "yes" ]]; then
+  # On Node 20 the TypeScript in build/ is run through the loader in
+  # build/linux/uos25/node20/, which needs the TypeScript package this tree
+  # depends on - and npm ci is what installs it. compile.sh runs this step right
+  # after npm ci instead.
+  echo "deferring preinstall until after npm ci (Node 20)"
+else
+  node build/npm/preinstall.ts
+fi
 
 for i in {1..5}; do # try 5 times
   if [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then

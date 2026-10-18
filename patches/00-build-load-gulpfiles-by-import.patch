@@ -1,0 +1,20 @@
+diff --git a/build/gulpfile.ts b/build/gulpfile.ts
+index 26a73f60..9d020873 100644
+--- a/build/gulpfile.ts
++++ b/build/gulpfile.ts
+@@ -55,8 +55,10 @@ process.on('unhandledRejection', (reason, p) => {
+ 	process.exit(1);
+ });
+ 
+-// Load all the gulpfiles only if running tasks other than the editor tasks
+-glob.sync('gulpfile.*.ts', { cwd: import.meta.dirname })
+-	.forEach(f => {
+-		return require(`./${f}`);
+-	});
++// Load all the gulpfiles only if running tasks other than the editor tasks.
++// Dynamic import rather than require(): the gulpfiles are ES modules, and
++// require() of an ES module only works from Node 22.12 onwards. This build has
++// to run on the Node 20 that UOS 25 ships.
++for (const f of glob.sync('gulpfile.*.ts', { cwd: import.meta.dirname })) {
++	await import(`./${f}`);
++}

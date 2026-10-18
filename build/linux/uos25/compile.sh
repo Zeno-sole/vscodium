@@ -63,6 +63,10 @@ fi
 # }}}
 
 # {{{ phase 2: seed the Foundry Local libraries, then run install scripts
+# On Node 20 the preinstall step was deferred until here, because the loader that
+# runs the build's TypeScript needs the TypeScript package npm ci installs.
+uos25_run_preinstall
+
 if [[ -d "${FOUNDRY_SEED}/linux-x64" ]]; then
   echo "== seeding Foundry Local native libraries =="
   mkdir -p node_modules/foundry-local-sdk/foundry-local-core/linux-x64
@@ -89,10 +93,12 @@ node build/npm/postinstall.ts
 
 # {{{ phase 3: compile
 echo "== compiling =="
-export NODE_OPTIONS="--max-old-space-size=${MAX_OLD_SPACE_SIZE}"
+# Appended, not assigned: on Node 20 NODE_OPTIONS already carries the loader.
+export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=${MAX_OLD_SPACE_SIZE}"
 export VSCODE_PUBLISH_COUNTER=1
 
-npm run gulp vscode-min-prepack
+uos25_patch_modules
+uos25_gulp vscode-min-prepack
 # }}}
 
 cd ..
