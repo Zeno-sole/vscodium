@@ -126,12 +126,38 @@ in a clean UOS 25 environment. The result lands in `assets/`.
 Several things have to be arranged around the chroot, because pbuilder runs the
 build as its own unprivileged user with a minimal environment:
 
-* **nodejs >= 22.** The archive ships nodejs 20, but the VS Code build runs
-  `node --experimental-strip-types`, which needs node >= 22.6, so
-  `Build-Depends: nodejs (>= 22)` cannot be satisfied from the archive.
-  `pbuilder/hooks/D10nodesource` adds the NodeSource repository before build
-  dependencies are resolved; the signing key is taken from the build host when
+* **nodejs.** The archive's nodejs 20.15.1 and npm 9.2.0 satisfy
+  `Build-Depends: nodejs (>= 20)` on their own, so the chroot needs nothing
+  added: the Node 22 features the VS Code build tooling uses
+  (`--experimental-strip-types`, `import.meta.main`) come from the loader in
+  [node20/](node20/README.md). `pbuilder/hooks/D10nodejs` refreshes the package
+  lists so the archive's current nodejs is visible to that resolution, and adds
+  the NodeSource `node_22.x` repository instead when `UOS25_PB_NODE22=yes` — the
+  reference build host uses nodejs 22, but that needs deb.nodesource.com, which
+  a UOS network cannot reach. The signing key is taken from the build host when
   it already has one, because fetching it through the proxy is unreliable.
+* **`fetch()` in the archive's nodejs.** UOS 25's `node-undici` ships llhttp's
+  wasm as three separately padded base64 chunks concatenated into one string, and
+  Node's base64 decoder stops at the first `=` — so it compiles 25711 bytes of a
+  58593-byte module and every `fetch()` in the archive's nodejs fails with a
+  WebAssembly `CompileError`. The payload appears twice, in
+  `lib/llhttp/llhttp-wasm.js` and inlined in `undici-fetch.js`, which is the copy
+  libnode is compiled to load
+  (`NODE_SHARED_BUILTIN_UNDICI_UNDICI_PATH`). `pbuilder/hooks/A10undici` runs
+  [fix-undici-wasm.mjs](fix-undici-wasm.mjs) as root once the build dependencies
+  are installed, which re-encodes every copy correctly; a host build cannot do
+  that (the files belong to the system nodejs) and `build-deb.sh` stops with the
+  command to run instead. Without the repair the build dies minutes in, inside an
+  unrelated download.
+* **`npm ls` output.** `build/lib/dependencies.ts` runs `npm ls --all --omit=dev`
+  and, when it fails, filters its stderr against a small allowlist. That allowlist
+  is matched against npm's old `npm ERR!` prefix; npm 10 prints `npm error`, so the
+  loop matches nothing and every failure is tolerated — which is what upstream's
+  build relies on. The archive's npm 9 does print `npm ERR!`, and then the
+  lockfile's own `@microsoft/dev-tunnels-ssh` peer mismatch (3.12.22 pinned against
+  a `^3.12.42` peer requirement) becomes fatal.
+  `patches/00-build-tolerate-npm9-ls-output.patch` drops the version-dependent
+  check and uses the output either way, so both npm versions behave the same.
 * **Environment variables.** pbuilder does not pass them in, so `build.sh`
   writes what the build needs — the HTTP proxy, `GITHUB_TOKEN`, `UOS25_RUST_BIN`,
   `HOME`, `XDG_CACHE_HOME`, `CARGO_HOME` and the git mirror mappings — to
@@ -211,7 +237,9 @@ source was written, and that `apt update` still succeeds afterwards.
 | `pbuilder/create-chroot.sh` | create the UOS 25 base tarball |
 | `pbuilder/build.sh` | source package + `pbuilder --build` |
 | `pbuilder/verify-deb.sh` | install and check the deb in the chroot |
-| `pbuilder/hooks/D10nodesource` | add nodejs >= 22 to the chroot |
+| `pbuilder/hooks/D10nodejs` | refresh the chroot's package lists; add nodejs 22 only on request |
+| `pbuilder/hooks/A10undici` | repair UOS 25's truncated node-undici before the build |
+| `fix-undici-wasm.mjs` | the repair itself; also runnable by hand on a build host |
 
 ### UOS 25 repository details
 

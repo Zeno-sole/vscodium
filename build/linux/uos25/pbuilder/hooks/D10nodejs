@@ -1,0 +1,81 @@
+#!/bin/sh
+# pbuilder D hook: make the archive's nodejs visible to build-dependency
+# resolution, and optionally add a newer one.
+#
+# UOS 25's archive ships nodejs 20.15.1 (with npm 9.2.0), and that is what this
+# package builds against: `Build-Depends: nodejs (>= 20)` is satisfied from the
+# archive, so the package builds on a plain UOS 25 machine with nothing added.
+# The two Node 22 features the VS Code build tooling needs
+# (`--experimental-strip-types` and `import.meta.main`) are supplied by the
+# loader in build/linux/uos25/node20/ instead. See that directory's README.
+#
+# Set UOS25_PB_NODE22=yes to add the NodeSource node_22.x repository and build
+# on nodejs 22 instead, which is what the reference build host uses. It is
+# opt-in because it needs deb.nodesource.com, which a UOS network cannot reach.
+#
+# D hooks run before the source is unpacked and before build dependencies are
+# resolved, and are the documented place to call apt-get update, which is what
+# makes the archive's current nodejs visible to that resolution.
+
+set -e
+
+# The settings build.sh could not pass into the chroot otherwise, including the
+# HTTP proxy this network needs for anything outside the intranet. Only
+# deb.nodesource.com is routed through it - the UOS mirror must stay direct.
+if [ -f /tmp/uos25-buildenv/build.env ]; then
+	. /tmp/uos25-buildenv/build.env
+fi
+
+echo "D10nodejs: refreshing the package lists"
+apt-get update -y
+
+if [ "${UOS25_PB_NODE22:-no}" != "yes" ]; then
+	echo "D10nodejs: using the archive's nodejs ($(apt-cache policy nodejs | sed -n 's/^ *Candidate: *//p'))"
+	exit 0
+fi
+
+if [ -f /etc/apt/sources.list.d/nodesource.list ]; then
+	echo "D10nodejs: NodeSource is already configured"
+	exit 0
+fi
+
+echo "D10nodejs: adding the NodeSource node_22.x repository"
+
+apt-get install -y --no-install-recommends ca-certificates curl gnupg
+
+if [ -n "${http_proxy:-}" ]; then
+	echo "Acquire::https::Proxy::deb.nodesource.com \"${http_proxy}\";" \
+		> /etc/apt/apt.conf.d/99nodesource-proxy
+	echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/99nodesource-retries
+fi
+
+# The signing key is small but the proxy drops it often enough to be a nuisance,
+# so a copy bind-mounted from the build host is preferred; build.sh mounts
+# /usr/share/keyrings/nodesource.gpg when the host already has it.
+if [ -s /usr/share/keyrings/nodesource.gpg ]; then
+	echo "D10nodejs: using the pre-seeded NodeSource key"
+else
+	i=1
+	while [ "${i}" -le 20 ]; do
+		if curl -fsSL --retry 3 --retry-delay 3 \
+			-o /tmp/nodesource-repo.gpg.key \
+			https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key; then
+			break
+		fi
+		echo "D10nodejs: key fetch attempt ${i} failed"
+		i=$((i + 1))
+		sleep 5
+	done
+
+	if [ ! -s /tmp/nodesource-repo.gpg.key ]; then
+		echo "D10nodejs: could not fetch the NodeSource signing key" >&2
+		exit 1
+	fi
+
+	gpg --dearmor -o /usr/share/keyrings/nodesource.gpg < /tmp/nodesource-repo.gpg.key
+fi
+
+echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
+	> /etc/apt/sources.list.d/nodesource.list
+
+apt-get update -y

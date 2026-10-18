@@ -1,0 +1,32 @@
+diff --git a/build/lib/dependencies.ts b/build/lib/dependencies.ts
+--- a/build/lib/dependencies.ts
++++ b/build/lib/dependencies.ts
+@@ -16,18 +16,13 @@
+ 	} catch (err) {
+-		const regex = /^npm ERR! .*$/gm;
+-		let match: RegExpExecArray | null;
+-
+-		while (match = regex.exec(err.message)) {
+-			if (/ELSPROBLEMS/.test(match[0])) {
+-				continue;
+-			} else if (/invalid: xterm/.test(match[0])) {
+-				continue;
+-			} else if (/A complete log of this run/.test(match[0])) {
+-				continue;
+-			} else {
+-				throw err;
+-			}
+-		}
+-
++		// `npm ls` exits non-zero when it disagrees with the lockfile, and this
++		// lockfile disagrees with itself: @microsoft/dev-tunnels-connections
++		// peer-requires @microsoft/dev-tunnels-ssh ^3.12.42 while the lockfile
++		// pins 3.12.22, so both are reported invalid. The --parseable output
++		// this needs is complete regardless.
++		//
++		// The allowlist that lived here matched npm's old "npm ERR!" prefix only.
++		// npm 10 prints "npm error", so the loop matched nothing and any failure
++		// was tolerated; UOS 25 builds with the npm 9 from its own archive, where
++		// the loop does run and the peer mismatch above becomes fatal.
+ 		raw = err.stdout;
+ 	}
