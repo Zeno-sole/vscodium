@@ -12,12 +12,12 @@ Build-Depends:
  git,
  jq,
  libkrb5-dev,
- nodejs (>= 22),
+ nodejs (>= 20),
  npm,
  pkg-config,
  python3,
  python-is-python3,
- rustc (>= 1.85) | rustup,
+ rustc-1.95 (>= 1.95) | rustup,
  xz-utils,
 Standards-Version: 4.6.2
 Homepage: https://vscodium.com/
