@@ -97,14 +97,16 @@ by every later build:
 ./build/linux/uos25/pbuilder/build.sh --offline      # UOS 25 chroot
 ```
 
-`--offline` sources `offline.sh`, which points every downloader at the vendor
-directory (serving it over loopback for the ones that need an HTTP URL), turns
-on `npm`/`cargo` offline modes, maps the git dependencies onto vendored mirrors,
-and selects the host toolchain. The data is several gigabytes per architecture
-and is deliberately not committed (`debian/.gitignore`) nor shipped in the source
-package (`debian/source/options`); see
-[vendor/README.md](vendor/README.md) for the layout, the per-architecture
-manifests and what each entry is for.
+`offline.sh` points every downloader at the vendor directory (serving it over
+loopback for the ones that need an HTTP URL), turns on `npm`/`cargo` offline
+modes, maps the git dependencies onto vendored mirrors, and selects the host
+toolchain. `env.sh` sources it automatically whenever `debian/vendor` exists, so
+the internal build platform - which has no external network and no way to pass
+options to the build - gets the same behaviour from a plain `dpkg-buildpackage`;
+`UOS25_USE_VENDOR=no` opts out. The data is several gigabytes per architecture
+and is deliberately not committed (`debian/.gitignore`), but it *is* shipped in
+the source package: see [vendor/README.md](vendor/README.md) for the layout, the
+per-architecture manifests, and why the source package has to carry it.
 
 amd64 is verified end to end: the package builds inside a network namespace with
 no route off the machine, and installs in a UOS 25 chroot. arm64 and loong64 are
@@ -143,12 +145,13 @@ build as its own unprivileged user with a minimal environment:
   WebAssembly `CompileError`. The payload appears twice, in
   `lib/llhttp/llhttp-wasm.js` and inlined in `undici-fetch.js`, which is the copy
   libnode is compiled to load
-  (`NODE_SHARED_BUILTIN_UNDICI_UNDICI_PATH`). `pbuilder/hooks/A10undici` runs
-  [fix-undici-wasm.mjs](fix-undici-wasm.mjs) as root once the build dependencies
-  are installed, which re-encodes every copy correctly; a host build cannot do
-  that (the files belong to the system nodejs) and `build-deb.sh` stops with the
-  command to run instead. Without the repair the build dies minutes in, inside an
-  unrelated download.
+  (`NODE_SHARED_BUILTIN_UNDICI_UNDICI_PATH`). The build needs `fetch()` to work
+  even though it has no network — several steps call it and tolerate the network
+  error, but not a WebAssembly error — so
+  [node20/llhttp-shim.mjs](node20/llhttp-shim.mjs) hands WebAssembly the intact
+  copy the package also installs, in process, through `NODE_OPTIONS`. It needs no
+  root, which is what makes it work on the internal platform; repairing the
+  installed file would need root there.
 * **`npm ls` output.** `build/lib/dependencies.ts` runs `npm ls --all --omit=dev`
   and, when it fails, filters its stderr against a small allowlist. That allowlist
   is matched against npm's old `npm ERR!` prefix; npm 10 prints `npm error`, so the
@@ -177,15 +180,54 @@ build as its own unprivileged user with a minimal environment:
 * **Build place.** pbuilder builds in `/var/cache/pbuilder/build`, which is only
   a few GB on a desktop install; this build needs more, so
   `--buildplace /tmp/pbuilder-build` is used.
-* **The tunnel CLI is skipped by default.** Cargo cannot resolve its git
-  dependencies and the crates.io index through this network — it gives up with
-  "transfer too slow" — so `build.sh` passes `SHOULD_BUILD_CLI=no`. Set
-  `UOS25_PB_BUILD_CLI=yes` to attempt it. `bin/codium` is a shell wrapper around
-  `resources/app/out/cli.js` and does not need it; the host build does produce
-  `codium-tunnel`.
+* **The tunnel CLI is skipped by default.** It is Rust with edition-2024 crates,
+  so it needs a toolchain ≥ 1.85 *with cargo and rustup*; the UOS archive has
+  rustc-1.95 (not on `PATH`), cargo 1.81 — too old to read an edition-2024
+  manifest — and no rustup, and a build with no external network cannot fetch a
+  toolchain. `debian/rules` therefore defaults `SHOULD_BUILD_CLI` to `no`, which
+  is how every verified package has been built. `bin/codium` is a shell wrapper
+  around `resources/app/out/cli.js` and does not need it. Set
+  `UOS25_PB_BUILD_CLI=yes` (with `UOS25_RUST_BIN` pointing at a rustup toolchain)
+  to attempt it in the chroot anyway.
 
 `UOS25_PB_NO_CACHES=yes` builds without any of the staged caches and mirrors,
 which is what a genuinely cold build would do.
+
+## Building on the internal platform
+
+The internal build platform fetches `codium_1.140.06880.dsc` and its tarball, runs
+`pbuilder --build` with its own configuration, and never sees this repository or
+the machine it was built on - so the source package is the entire input, and it has
+no external network. Everything the build would otherwise download therefore has to
+be inside it:
+
+* `debian/vendor/` travels in the tarball (`debian/source/options` deliberately
+  does not ignore it), which is why the source package is about 2.8 GB;
+* `env.sh` switches the build to those dependencies by itself whenever
+  `debian/vendor` is there, so a plain `dpkg-buildpackage` behaves like `--offline`;
+* pbuilder unpacks the source as its build user, so the npm and cargo caches in
+  the vendor come out writable and need no staging;
+* that platform runs the build with `HOME=/nonexistent`; `env.sh` points `HOME`,
+  `XDG_CACHE_HOME` and node-gyp's devdir at a writable directory in that case.
+
+The hooks under `pbuilder/hooks/` are **not** used there - the platform brings its
+own pbuilder configuration - so nothing the build needs may live in a hook. That is
+why the archive's broken `fetch()` is worked around in process
+(`node20/llhttp-shim.mjs`) rather than by repairing the installed file, which would
+need root.
+
+To build the package the way the platform does:
+
+```sh
+dpkg-source -b .
+sudo pbuilder --build --basetgz /var/cache/pbuilder/uos25-snipe-amd64.tgz \
+  --buildplace /tmp/pbuilder-build --allow-untrusted --use-network yes \
+  --aptcache '' --buildresult /tmp/result --debbuildopts -b \
+  ../codium_1.140.06880.dsc
+```
+
+No `--hookdir`, no `--bindmounts`, no `--offline`: if that produces a `.deb`, the
+source package is self-contained.
 
 ## Verifying the deb
 
@@ -200,16 +242,17 @@ source was written, and that `apt update` still succeeds afterwards.
 
 ## Prerequisites for a host build
 
-* Node.js 22.x (the `.nvmrc` in the VS Code tree asks for 24; the build sets
-  `VSCODE_SKIP_NODE_VERSION_CHECK=1`, and 22 is what UOS 25 ships)
+* Node.js 20 or newer. The archive's 20.15.1 is enough — `node20/` supplies what
+  the tooling needs from 22 — and so is the 22 a developer machine tends to have.
 * `jq`, `fakeroot`, `dpkg-dev`, `debhelper`, `build-essential`, `python3`
-* a Rust toolchain >= 1.85 with rustup, for the tunnel CLI. UOS 25 ships rustc
-  1.81, which is too old — the CLI crates use edition 2024. Install a toolchain
-  with rustup (a mirror such as `rsproxy.cn` works when
-  `static.rust-lang.org` is unreachable) and point `UOS25_RUST_BIN` at its
-  `cargo/bin`, or set `SHOULD_BUILD_CLI=no` to ship the deb without the tunnel
-  CLI — `bin/codium` is a shell wrapper around `resources/app/out/cli.js` and
-  works either way.
+* a Rust toolchain >= 1.85 with rustup, only if you want the tunnel CLI. The UOS
+  archive cannot provide one (rustc-1.95 is there but cargo is 1.81 and cannot
+  read an edition-2024 manifest), so `SHOULD_BUILD_CLI` defaults to `no` and the
+  package ships without `codium-tunnel`. To include it, install a toolchain with
+  rustup (a mirror such as `rsproxy.cn` works when `static.rust-lang.org` is
+  unreachable), point `UOS25_RUST_BIN` at its `cargo/bin` and pass
+  `SHOULD_BUILD_CLI=yes`. `bin/codium` is a shell wrapper around
+  `resources/app/out/cli.js` and works either way.
 * the sysroot tarballs in `UOS25_SYSROOT_CACHE` (default
   `/tmp/uos25-sysroots`), from the `Microsoft/vscode-linux-build-agent`
   release `v20260212-405735`:
@@ -238,8 +281,6 @@ source was written, and that `apt update` still succeeds afterwards.
 | `pbuilder/build.sh` | source package + `pbuilder --build` |
 | `pbuilder/verify-deb.sh` | install and check the deb in the chroot |
 | `pbuilder/hooks/D10nodejs` | refresh the chroot's package lists; add nodejs 22 only on request |
-| `pbuilder/hooks/A10undici` | repair UOS 25's truncated node-undici before the build |
-| `fix-undici-wasm.mjs` | the repair itself; also runnable by hand on a build host |
 
 ### UOS 25 repository details
 

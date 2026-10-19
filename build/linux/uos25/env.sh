@@ -108,13 +108,19 @@ export UOS25_NODE20
 
 if [[ "${UOS25_NODE20}" == "yes" ]]; then
   # --import is available from Node 20.6 and applies to every node process the
-  # build starts, which is what avoids rewriting each npm script. Appended only
-  # once: this file is sourced by more than one script in the pipeline, and a
-  # second copy would register the same loader twice.
-  UOS25_NODE20_IMPORT="--import file://${UOS25_DIR}/node20/register.mjs"
-  if [[ "${NODE_OPTIONS:-}" != *"${UOS25_NODE20_IMPORT}"* ]]; then
-    export NODE_OPTIONS="${NODE_OPTIONS:-} ${UOS25_NODE20_IMPORT}"
-  fi
+  # build starts, which is what avoids rewriting each npm script. Each is appended
+  # only once: this file is sourced by more than one script in the pipeline, and a
+  # second copy would register the same hooks twice.
+  #
+  # llhttp-shim.mjs comes along because the same node takes its undici from the
+  # archive's node-undici, whose llhttp wasm is truncated - which makes every
+  # fetch() fail with a WebAssembly error. See that file.
+  for module in register.mjs llhttp-shim.mjs; do
+    import="--import file://${UOS25_DIR}/node20/${module}"
+    if [[ "${NODE_OPTIONS:-}" != *"${import}"* ]]; then
+      export NODE_OPTIONS="${NODE_OPTIONS:-} ${import}"
+    fi
+  done
 fi
 
 # Run a gulp task. `npm run gulp` passes --experimental-strip-types, which Node
@@ -151,6 +157,22 @@ uos25_patch_modules() {
 export -f uos25_gulp uos25_run_preinstall uos25_patch_modules
 # }}}
 
+# {{{ writable build home
+# pbuilder runs the build as its own user with HOME=/nonexistent, and everything
+# that reaches for a per-user cache directory then fails or writes where it
+# cannot: @electron/get resolves its cache through env-paths (XDG_CACHE_HOME,
+# else $HOME/.cache), and node-gyp falls back to a temporary devdir, which loses
+# the electron target. Point them at a directory the build can write whenever
+# HOME is not usable. On a developer's machine this does nothing.
+if [[ ! -w "${HOME:-/nonexistent}" ]]; then
+  UOS25_BUILD_HOME="${UOS25_BUILD_HOME:-${TMPDIR:-/tmp}/uos25-build-home}"
+  export HOME="${UOS25_BUILD_HOME}"
+  export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
+  export npm_config_devdir="${npm_config_devdir:-${HOME}/.node-gyp}"
+  mkdir -p "${XDG_CACHE_HOME}" "${npm_config_devdir}"
+fi
+# }}}
+
 # {{{ extra build environment
 # pbuilder cannot pass environment variables into the chroot, but the build
 # needs an HTTP proxy for the GitHub fetches. build/linux/uos25/pbuilder/build.sh
@@ -161,5 +183,26 @@ UOS25_BUILD_ENV_FILE="${UOS25_BUILD_ENV_FILE:-/tmp/uos25-buildenv/build.env}"
 if [[ -f "${UOS25_BUILD_ENV_FILE}" ]]; then
   # shellcheck disable=SC1090
   . "${UOS25_BUILD_ENV_FILE}"
+fi
+# }}}
+
+# {{{ vendored build dependencies
+# debian/vendor travels in the source package (debian/source/options keeps it
+# there on purpose), so the build finds it whether it runs from a checkout, from
+# a pbuilder unpack or from the source package the internal build platform
+# unpacks. Use it whenever it is present: the point of the vendor directory is
+# that the build needs no external network at all, and the platform it has to
+# run on has none. UOS25_USE_VENDOR=no opts out.
+#
+# This is done here rather than in build-app.sh because env.sh is what both entry
+# points source, and because the settings have to be in place for the whole
+# debian/rules run, not just the compile step.
+if [[ "${UOS25_USE_VENDOR:-}" != "no" && "${UOS25_OFFLINE:-no}" != "yes" ]]; then
+  UOS25_VENDOR_DIR="${UOS25_VENDOR_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/debian/vendor}"
+  if [[ -d "${UOS25_VENDOR_DIR}" ]]; then
+    export UOS25_VENDOR_DIR UOS25_USE_VENDOR=yes
+    # shellcheck disable=SC1091
+    . "$(dirname "${BASH_SOURCE[0]}")/offline.sh"
+  fi
 fi
 # }}}

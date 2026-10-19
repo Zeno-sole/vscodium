@@ -99,14 +99,12 @@ export UOS25_OFFLINE=yes
 # architecture independent, only the optional native prebuilds differ.
 #
 # Both are also written to during the build (npm keeps its debug log and its
-# unpacked tarballs in the cache directory), so a caller that has a writable
-# copy passes it in through UOS25_NPM_CACHE / UOS25_CARGO_HOME and that wins
-# over the vendor directory, which is build input and may not be writable by
-# whoever the build runs as. build/linux/uos25/pbuilder/build.sh stages such
-# copies for the chroot build.
-export npm_config_cache="${UOS25_NPM_CACHE:-${SHARED_DIR}/npm-cache}"
+# unpacked tarballs in the cache directory, cargo its registry index), which is
+# why the vendor directory has to be writable by the build. It is: it travels in
+# the source package, and pbuilder unpacks the source as its build user.
+export npm_config_cache="${SHARED_DIR}/npm-cache"
 export npm_config_offline=true
-export CARGO_HOME="${UOS25_CARGO_HOME:-${SHARED_DIR}/cargo}"
+export CARGO_HOME="${SHARED_DIR}/cargo"
 export CARGO_NET_OFFLINE=true
 # }}}
 

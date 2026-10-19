@@ -31,10 +31,14 @@ debian/vendor/                  $UOS25_VENDOR_DIR, overridable
 ```
 
 It is build input, not something to commit: `debian/.gitignore` keeps it out of
-git, and `debian/source/options` keeps it out of the source package, so a
-`dpkg-source -b` run stays at a few megabytes instead of several gigabytes. A
-pbuilder run mounts it into the chroot, since the chroot unpacks the source
-somewhere else entirely.
+git. It *is* shipped in the source package, though, and deliberately so: the
+build has to run with no external network at all - the internal build platform
+that builds this package cannot reach github.com, the npm registry, nuget.org or
+nodejs.org, and the source package is all it has. So the vendor is what makes
+`codium_1.140.06880.tar.xz` several gigabytes, and `env.sh` switches the build to
+it automatically whenever `debian/vendor` is there. pbuilder unpacks the source
+as its build user, so the caches the build writes into are writable without any
+staging.
 
 `electron/` and `node-headers/` mirror the URL layout the downloaders use, so
 they can be served over loopback unchanged: @electron/get asks for

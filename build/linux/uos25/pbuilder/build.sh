@@ -11,10 +11,10 @@
 #
 # The UOS 25 archive provides everything the build needs - nodejs 20.15.1 and
 # npm 9.2.0 satisfy the declared Build-Depends, with build/linux/uos25/node20/
-# supplying the Node 22 features the VS Code tooling uses - so the hooks in
-# hooks/ only have to refresh the package lists (D10nodejs) and repair the
-# archive's truncated node-undici, which breaks fetch() (A10undici). What does
-# have to be arranged around the chroot is the caches, by bind mounts:
+# supplying the Node 22 features the VS Code tooling uses and working around the
+# archive's truncated node-undici - so the hook in hooks/ only has to refresh the
+# package lists. What does have to be arranged around the chroot is the caches,
+# by bind mounts:
 #
 #   * the toolchain caches. Fetching the VS Code sources, the npm packages, the
 #     Electron binary and the build-agent sysroots from scratch inside the
@@ -171,19 +171,16 @@ EOF
 chmod -R a+rwX "${CARGO_HOME_MOUNT}"
 BIND_MOUNTS+=(--bindmounts "${CARGO_HOME_MOUNT}")
 printf 'export %s=%q\n' CARGO_HOME "${CARGO_HOME_MOUNT}" >> "${BUILD_ENV_DIR}/build.env"
-# offline.sh reads the vendor directory instead of CARGO_HOME when it is
-# sourced; this is what tells it that a writable copy has already been staged.
-printf 'export %s=%q\n' UOS25_CARGO_HOME "${CARGO_HOME_MOUNT}" >> "${BUILD_ENV_DIR}/build.env"
 # Cargo's HTTP/2 multiplexing fails through this proxy ("Error in the HTTP2
 # framing layer"); HTTP/1.1 does not.
 printf 'export %s=%q\n' CARGO_HTTP_MULTIPLEXING "false" >> "${BUILD_ENV_DIR}/build.env"
-# The tunnel CLI needs cargo to resolve two git dependencies and the crates.io
-# index, and those transfers do not get through this network reliably - cargo
-# gives up with "transfer too slow". The chroot build therefore skips it by
-# default; set UOS25_PB_BUILD_CLI=yes to attempt it anyway. bin/codium itself is
-# a shell wrapper around resources/app/out/cli.js and does not need it, and the
-# host build (build/linux/uos25/build-deb.sh) does produce it.
-printf 'export %s=%q\n' SHOULD_BUILD_CLI "${UOS25_PB_BUILD_CLI:-no}" >> "${BUILD_ENV_DIR}/build.env"
+# The tunnel CLI is skipped by default: debian/rules defaults SHOULD_BUILD_CLI to
+# no, because the UOS archive has no toolchain that can build it (see the comment
+# there). Set UOS25_PB_BUILD_CLI=yes to attempt it anyway - which then also needs a
+# rustup toolchain bind-mounted and pointed at with UOS25_RUST_BIN.
+if [[ "${UOS25_PB_BUILD_CLI:-no}" == "yes" ]]; then
+  printf 'export %s=%q\n' SHOULD_BUILD_CLI yes >> "${BUILD_ENV_DIR}/build.env"
+fi
 # pbuilder runs the build as its own unprivileged user (uid 1234 by default)
 # with HOME=/nonexistent, and npm needs a writable home and cache. The host's
 # npm cache is deliberately not mounted: it is owned by the invoking user, which
@@ -200,40 +197,11 @@ sed 's/^\(GITHUB_TOKEN=\).*/\1<set>/' "${BUILD_ENV_DIR}/build.env"
 
 BIND_MOUNTS=(--bindmounts "${BUILD_ENV_DIR}")
 
-# Offline builds read every build input from the vendor directory, which lives in
-# the source tree; the chroot unpacks the source elsewhere, so it is mounted at
-# the absolute path the environment points at. pbuilder itself still needs the
-# network here, but only to provision the chroot (its build dependencies) - the
-# build does not touch it.
-if [[ "${OFFLINE}" == "yes" ]]; then
-  echo "== offline: mounting the vendor directory into the chroot =="
-  BIND_MOUNTS+=(--bindmounts "${VENDOR_DIR}")
-
-  # npm writes into its cache directory - the debug log, the unpacked tarballs
-  # it stages before renaming them into place - so the vendor's copy cannot be
-  # used directly: it belongs to the invoking user, and the chroot builds as
-  # somebody else. A writable copy is staged once and reused, which keeps the
-  # vendor directory intact as build input.
-  VENDOR_NPM_CACHE="${VENDOR_DIR}/shared/npm-cache"
-  NPM_CACHE_MOUNT="${UOS25_PB_NPM_CACHE:-/tmp/uos25-npm-cache}"
-  if [[ -d "${VENDOR_NPM_CACHE}" ]]; then
-    if [[ ! -d "${NPM_CACHE_MOUNT}" ]] || \
-       [[ -n "$(find "${VENDOR_NPM_CACHE}" -newer "${NPM_CACHE_MOUNT}/.staged" -print -quit 2>/dev/null)" ]]; then
-      echo "== staging the npm cache for the chroot (this copies a few GB, once) =="
-      rm -rf "${NPM_CACHE_MOUNT}"
-      mkdir -p "${NPM_CACHE_MOUNT}"
-      cp -a "${VENDOR_NPM_CACHE}/." "${NPM_CACHE_MOUNT}/"
-      chmod -R a+rwX "${NPM_CACHE_MOUNT}"
-      touch "${NPM_CACHE_MOUNT}/.staged"
-    else
-      echo "== reusing the staged npm cache: ${NPM_CACHE_MOUNT} =="
-    fi
-    BIND_MOUNTS+=(--bindmounts "${NPM_CACHE_MOUNT}")
-    printf 'export %s=%q\n' UOS25_NPM_CACHE "${NPM_CACHE_MOUNT}" >> "${BUILD_ENV_DIR}/build.env"
-  else
-    echo "warning: ${VENDOR_NPM_CACHE} not found; the chroot cannot install npm packages offline" >&2
-  fi
-fi
+# The vendor directory is NOT bind-mounted. It travels in the source package
+# (debian/source/options keeps it there), and pbuilder unpacks the source as its
+# build user - so the copy the build finds is writable, which is what the npm and
+# cargo caches need, and it is the same copy on every build host. Mounting the
+# invoking user's copy instead would shadow it and be read-only for the build.
 
 # Local git mirrors. build-app.sh maps github.com/Microsoft/vscode through
 # GIT_CONFIG_* so the several-hundred-megabyte fetch does not have to survive the

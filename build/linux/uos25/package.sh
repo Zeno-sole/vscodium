@@ -136,18 +136,23 @@ fi
 find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
 # The tunnel CLI (build_cli.sh) is Rust and its crates use edition 2024, so it
-# needs a toolchain >= 1.85 with rustup. UOS 25 ships rustc 1.81, so point
-# UOS25_RUST_BIN at a rustup bin directory when the system Rust is too old, or
-# set SHOULD_BUILD_CLI=no to ship the deb without the tunnel CLI (bin/<name>
-# itself is a shell wrapper around resources/app/out/cli.js and does not need
-# it).
+# needs a toolchain >= 1.85 with rustup, plus cargo and a `rustup target add` of
+# the host target. UOS 25 has no such toolchain: the archive ships rustc 1.95 and
+# cargo 1.81, and cargo that old cannot even read an edition-2024 manifest. Point
+# UOS25_RUST_BIN at a rustup bin directory when one is available, or leave
+# SHOULD_BUILD_CLI=no to ship the deb without the tunnel CLI (bin/<name> itself is
+# a shell wrapper around resources/app/out/cli.js and does not need it).
 if [[ -n "${UOS25_RUST_BIN:-}" ]]; then
   export PATH="${UOS25_RUST_BIN}:${PATH}"
 fi
 
 if [[ "${SHOULD_BUILD_CLI:-yes}" != "no" ]]; then
   RUST_MIN="1.85"
-  RUST_VER="$(rustc --version 2>/dev/null | awk '{print $2}')"
+  # rustc may simply not be installed - UOS 25's rustc-1.95 package does not put
+  # `rustc` on PATH by itself - and under `set -o pipefail` this assignment would
+  # then take the command substitution's status and abort the build with 127
+  # before the checks below can say what is missing.
+  RUST_VER="$( (rustc --version 2>/dev/null || true) | awk '{print $2}')"
   if [[ -z "${RUST_VER}" ]]; then
     echo "error: rustc not found but the tunnel CLI was requested" >&2
     echo "       set UOS25_RUST_BIN to a rustup bin directory, or SHOULD_BUILD_CLI=no" >&2

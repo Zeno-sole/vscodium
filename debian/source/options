@@ -14,7 +14,9 @@ tar-ignore = debian/files
 tar-ignore = debian/*.substvars
 tar-ignore = debian/*.debhelper.log
 tar-ignore = debian/debhelper-build-stamp
-# The vendored build dependencies (several GB per architecture). They are build
-# input that travels with the source tree, not something to package: keeping
-# them here would put them in the source tarball and in every pbuilder unpack.
-tar-ignore = debian/vendor
+# debian/vendor is deliberately NOT ignored, even though it is several GB. The
+# build has to run with no external network at all - the internal build platform
+# cannot reach github.com, the npm registry, nuget.org or nodejs.org, and this
+# source package is all it has - so the vendored dependencies have to travel in
+# it. pbuilder also unpacks the source as its build user, which means the caches
+# the build writes into come out writable and need no staging.

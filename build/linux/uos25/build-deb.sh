@@ -27,22 +27,6 @@ cd "${ROOT}"
 
 export RELEASE_VERSION="${RELEASE_VERSION:-1.140.06880}"
 
-# UOS 25's node-undici ships llhttp's wasm as three separately padded base64
-# chunks, and Node's decoder stops at the first '=' - so the archive's nodejs
-# cannot load its own HTTP client, and every fetch() in the build fails with a
-# WebAssembly CompileError. See fix-undici-wasm.mjs for the full story.
-#
-# The pbuilder build repairs it from an A hook, which runs as root; a host build
-# cannot, because the file belongs to the system nodejs. Say so here, where the
-# fix is one command away, rather than let the build die minutes later inside an
-# unrelated download. This passes on a node that does not use that file at all -
-# a tarball or NodeSource node, for instance.
-if ! node build/linux/uos25/fix-undici-wasm.mjs --check; then
-  echo "error: fetch() is broken in $(node --version); see fix-undici-wasm.mjs" >&2
-  echo "       run: sudo node build/linux/uos25/fix-undici-wasm.mjs" >&2
-  exit 1
-fi
-
 # Extension bundling hits api.github.com, which answers anonymous requests with
 # a 403. `gh auth token` is used when GITHUB_TOKEN is not exported.
 if [[ -z "${GITHUB_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then

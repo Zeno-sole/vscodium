@@ -29,12 +29,16 @@ export RELEASE_VERSION ?= 1.140.06880
 export VSCODE_QUALITY ?= stable
 export OS_NAME ?= linux
 
-# The tunnel CLI is Rust and its crates need edition 2024 (rustc >= 1.85).
-# Build-Depends allows either the distribution rustc or rustup; when only the
-# former is available and it is too old, set SHOULD_BUILD_CLI=no to ship the
-# package without codium-tunnel (bin/codium is a shell wrapper around
-# resources/app/out/cli.js and does not depend on it).
-export SHOULD_BUILD_CLI ?= yes
+# The tunnel CLI is Rust and its crates need edition 2024, which takes a toolchain
+# >= 1.85 *with cargo and rustup*. The UOS 25 archive has neither: rustc-1.95 is
+# there but does not put `rustc` on PATH, cargo is 1.81 (too old to read an
+# edition-2024 manifest) and rustup is not installed - and a build with no
+# external network cannot fetch a toolchain. So the package is built without
+# codium-tunnel by default, which is what the verified packages have always been;
+# bin/codium is a shell wrapper around resources/app/out/cli.js and does not depend
+# on it. A build host with a suitable rustup toolchain can still ask for it with
+# SHOULD_BUILD_CLI=yes and UOS25_RUST_BIN.
+export SHOULD_BUILD_CLI ?= no
 
 APP_DIR := VSCode-linux-$(VSCODE_ARCH)
 DESTDIR_DIR := debian/codium
